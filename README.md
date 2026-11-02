@@ -55,6 +55,31 @@
 
 ---
 
+## Features Implemented Matrix
+
+| Area | Feature | Implementation Details | Status |
+|---|---|---|---|
+| **Backend** | BullMQ Delayed Jobs | Primary scheduler mechanism using Redis delayed sets — **zero cron jobs** | ✅ Complete |
+| **Backend** | Restart Persistence | Delayed jobs persist in Redis; startup reconciliation recovers any interrupted DB jobs | ✅ Complete |
+| **Backend** | Idempotent Delivery | SHA-256 keying `sha256(userId\|recipient\|scheduledAt)` prevents duplicate sends | ✅ Complete |
+| **Backend** | Rate Limiting | Atomic Redis Lua script enforces per-sender hourly quota; auto-reschedules overflow | ✅ Complete |
+| **Backend** | Minimum Delay & Concurrency | Configurable `MIN_EMAIL_DELAY_MS` between sends; multi-worker concurrency | ✅ Complete |
+| **Backend** | Ethereal SMTP | Nodemailer integration with auto test-account generation & web preview URLs | ✅ Complete |
+| **Backend** | Elasticsearch Indexing | Scheduled & sent emails indexed; resilient search fallback if ES is offline | ✅ Complete |
+| **Backend** | Slack Notifications | Real Slack OAuth with encrypted token storage; live alerts on hourly quota hit | ✅ Complete |
+| **Backend** | Bull Board Dashboard | Real-time queue monitoring at `/admin/queues` with HTTP Basic auth protection | ✅ Complete |
+| **Backend** | Senders API | Manage custom SMTP credentials + auto-generate Ethereal identities | ✅ Complete |
+| **Backend** | Open API 3.1.0 Contract | Standardized OpenAPI spec available in [`openapi.yaml`](openapi.yaml) | ✅ Complete |
+| **Frontend** | Google OAuth Login | Secure session with HTTP-only JWT cookie; redirects to dashboard | ✅ Complete |
+| **Frontend** | User Profile & Header | Displays user name, email, avatar, Slack connection status, and logout | ✅ Complete |
+| **Frontend** | Scheduled & Sent Tabs | Dedicated views with status badges, timestamps, loading skeletons, and pagination | ✅ Complete |
+| **Frontend** | Compose Campaign Modal | Subject, HTML body, start time, delay, hourly limit, and sender selection | ✅ Complete |
+| **Frontend** | CSV/TXT Recipient Parser | Header auto-detection, manual email entry, invalid address warning, and recipient list review/removal drawer | ✅ Complete |
+| **Frontend** | Senders Management Drawer | Collapsible UI to view active SMTP senders and provision test Ethereal accounts | ✅ Complete |
+| **Frontend** | Real-Time Search Bar | Search emails by subject, recipient, or body via Elasticsearch | ✅ Complete |
+
+---
+
 ## Folder Structure
 
 ```
@@ -419,4 +444,41 @@ Unit & Integration test suites (**23 tests passing across 5 suites**):
 5. **Single queue, multiple workers**: Designed for horizontal scaling — add more worker instances without code changes.
 
 6. **SMTP credentials**: Using Ethereal (fake SMTP). In production, swap `SenderAccount` SMTP settings to a real provider (SendGrid, SES, etc.).
+
+---
+
+## 📹 Demo Video & Submission Guide
+
+### Video Outline (Max 5 Minutes)
+1. **Overview & Dashboard**:
+   - Log in via Google OAuth or seed user token.
+   - Show User header, Slack connection status, and Sender identities.
+2. **Scheduling Campaign**:
+   - Open Compose Modal.
+   - Upload sample CSV lead list or type recipients manually.
+   - Review detected recipient count and show the collapsible review drawer.
+   - Set start time, minimum delay (e.g. 2000ms), and hourly limit.
+   - Submit and show scheduled jobs appearing in the **Scheduled Emails** tab.
+3. **Queue Inspection**:
+   - Open Bull Board at `http://localhost:4000/admin/queues` showing delayed & active jobs.
+4. **Sending & Ethereal Verification**:
+   - Wait for jobs to activate or schedule for immediate test send.
+   - Show jobs transitioning to **Sent Emails** with Ethereal preview URLs.
+   - Click preview URL to view rendered email in browser.
+5. **Server Restart Resilience (No Cron)**:
+   - Schedule future emails.
+   - Terminate API & worker processes (`Ctrl+C`).
+   - Restart the processes.
+   - Demonstrate startup reconciliation logs and show future emails are still processed at the exact scheduled timestamp.
+6. **Rate Limiting & Slack Alert (Bonus)**:
+   - Schedule emails exceeding the sender's configured hourly quota.
+   - Show jobs being deferred to the next hourly window without dropping.
+   - Show automated rate limit notification received in Slack.
+
+### Submission Checklist
+- [x] Repository configured with clean git history and commits pushed.
+- [ ] Grant private repo access to GitHub users: `Mitrajit` and `Yadav036`.
+- [ ] Record and upload 5-minute Loom/YouTube demo video.
+- [ ] Complete the submission form: [Assignment Submission Form](https://forms.clickup.com/9005062261/f/8cbwp3n-8876/6NNNJ92DV93PQTAYST).
+
 
