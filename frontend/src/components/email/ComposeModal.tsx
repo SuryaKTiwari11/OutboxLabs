@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 //  components/email/ComposeModal.tsx
 //  Modal for composing + scheduling an email campaign.
-//  Supports CSV upload, recipient parsing, and bulk scheduling.
+//  Supports CSV/TXT upload, manual entry, recipient review & removal.
 // ─────────────────────────────────────────────────────────────
 
 import { useState, useRef } from "react";
@@ -9,12 +9,20 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Papa from "papaparse";
-import { Upload, Users, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  Upload,
+  Users,
+  AlertCircle,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Plus,
+} from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { useBulkSchedule } from "../../hooks/useEmails";
-import { useAuth } from "../../contexts/AuthContext";
+import { useSenders } from "../../hooks/useSenders";
 
 const schema = z.object({
   subject:        z.string().min(1, "Subject is required"),
@@ -42,11 +50,14 @@ interface RecipientParseResult {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
-  const { user } = useAuth();
+  const { data: senders = [] } = useSenders();
   const bulkSchedule = useBulkSchedule();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [parseResult, setParseResult] = useState<RecipientParseResult | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [manualEmail, setManualEmail] = useState("");
+  const [showRecipientList, setShowRecipientList] = useState(false);
 
   const {
     register,
@@ -72,49 +83,101 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
       header: true,
       skipEmptyLines: true,
       complete: (result) => {
-        const emails = new Set<string>();
+        const validEmails = new Set<string>(parseResult?.valid ?? []);
+        const invalidTokens = new Set<string>();
 
-        // Try common column names for email fields
-        const emailColumns = ["email", "Email", "EMAIL", "email_address", "EmailAddress"];
+        const emailColumns = ["email", "Email", "EMAIL", "email_address", "EmailAddress", "recipient"];
 
         result.data.forEach((row) => {
+          let foundCol = false;
           for (const col of emailColumns) {
             const val = row[col]?.trim();
-            if (val && EMAIL_REGEX.test(val)) {
-              emails.add(val.toLowerCase());
+            if (val) {
+              foundCol = true;
+              if (EMAIL_REGEX.test(val)) {
+                validEmails.add(val.toLowerCase());
+              } else {
+                invalidTokens.add(val);
+              }
             }
           }
-          // Fallback: try all columns
-          if (emails.size === 0) {
+
+          if (!foundCol) {
             Object.values(row).forEach((val) => {
               const trimmed = val?.trim();
-              if (trimmed && EMAIL_REGEX.test(trimmed)) {
-                emails.add(trimmed.toLowerCase());
+              if (trimmed) {
+                if (EMAIL_REGEX.test(trimmed)) {
+                  validEmails.add(trimmed.toLowerCase());
+                } else if (trimmed.includes("@")) {
+                  invalidTokens.add(trimmed);
+                }
               }
             });
           }
         });
 
-        // Also handle plain text files (one email per line)
-        const rawText = result.data.map((r) => Object.values(r).join(",")).join("\n");
-        rawText.split(/[\s,;]+/).forEach((token) => {
-          const t = token.trim();
-          if (EMAIL_REGEX.test(t)) emails.add(t.toLowerCase());
-        });
+        // Also handle plain text fallback if header parsing missed plain line lists
+        if (validEmails.size === 0) {
+          const rawText = result.data.map((r) => Object.values(r).join(",")).join("\n");
+          rawText.split(/[\r\n,;]+/).forEach((token) => {
+            const t = token.trim();
+            if (EMAIL_REGEX.test(t)) {
+              validEmails.add(t.toLowerCase());
+            } else if (t.includes("@")) {
+              invalidTokens.add(t);
+            }
+          });
+        }
 
-        const validList = Array.from(emails);
-        // For demo: detect "invalid" as anything that didn't match
-        const allTokens = rawText.split(/[\s,;]+/).filter((t) => t.length > 3);
-        const invalidCount = allTokens.filter(
-          (t) => !EMAIL_REGEX.test(t.trim()) && t.includes("@")
-        ).length;
+        const validList = Array.from(validEmails);
+        const invalidList = Array.from(invalidTokens);
 
         setParseResult({
           valid:   validList,
-          invalid: [],
-          total:   validList.length + invalidCount,
+          invalid: invalidList,
+          total:   validList.length + invalidList.length,
         });
       },
+    });
+  };
+
+  const handleAddManualEmail = () => {
+    const tokens = manualEmail
+      .split(/[\s,;]+/)
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (tokens.length === 0) return;
+
+    const currentValid = new Set(parseResult?.valid ?? []);
+    const currentInvalid = new Set(parseResult?.invalid ?? []);
+
+    tokens.forEach((t) => {
+      if (EMAIL_REGEX.test(t)) {
+        currentValid.add(t);
+      } else {
+        currentInvalid.add(t);
+      }
+    });
+
+    const validList = Array.from(currentValid);
+    const invalidList = Array.from(currentInvalid);
+
+    setParseResult({
+      valid:   validList,
+      invalid: invalidList,
+      total:   validList.length + invalidList.length,
+    });
+    setManualEmail("");
+  };
+
+  const handleRemoveRecipient = (email: string) => {
+    if (!parseResult) return;
+    const updatedValid = parseResult.valid.filter((e) => e !== email);
+    setParseResult({
+      ...parseResult,
+      valid: updatedValid,
+      total: updatedValid.length + parseResult.invalid.length,
     });
   };
 
@@ -129,6 +192,7 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
     reset();
     setParseResult(null);
     setFileName(null);
+    setManualEmail("");
     onClose();
   };
 
@@ -136,10 +200,9 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
     reset();
     setParseResult(null);
     setFileName(null);
+    setManualEmail("");
     onClose();
   };
-
-  const senders = user?.senderAccounts ?? [];
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Compose Email Campaign" size="lg">
@@ -157,7 +220,7 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
         <div className="flex flex-col gap-1">
           <label className="text-sm font-medium text-slate-700">From (Sender)</label>
           <select
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
             {...register("senderId")}
           >
             <option value="">Select sender…</option>
@@ -172,7 +235,7 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
           )}
           {senders.length === 0 && (
             <p className="text-xs text-amber-600">
-              No senders configured. Please add a sender account first.
+              No senders configured. Please add a sender account using the "Senders" panel first.
             </p>
           )}
         </div>
@@ -190,29 +253,52 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
           <label className="text-sm font-medium text-slate-700">Email Body (HTML)</label>
           <textarea
             rows={5}
-            placeholder="<p>Hi {{name}}, ...</p>"
+            placeholder="<p>Hi there,</p><p>We are reaching out to discuss...</p>"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
             {...register("body")}
           />
           {errors.body && <p className="text-xs text-red-600">{errors.body.message}</p>}
         </div>
 
-        {/* CSV Upload */}
+        {/* Recipients: Manual entry + CSV Upload */}
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-slate-700">Recipients (CSV/TXT)</label>
+          <label className="text-sm font-medium text-slate-700">Recipients</label>
+
+          {/* Quick manual entry */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Add recipient (e.g. user@example.com) or paste comma-separated..."
+              value={manualEmail}
+              onChange={(e) => setManualEmail(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleAddManualEmail();
+                }
+              }}
+              className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <Button type="button" variant="secondary" size="sm" onClick={handleAddManualEmail}>
+              <Plus className="h-4 w-4" />
+              Add
+            </Button>
+          </div>
+
+          {/* CSV File Upload Dropzone */}
           <div
-            className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-400 transition-colors"
+            className="border-2 border-dashed border-slate-300 rounded-lg p-5 text-center cursor-pointer hover:border-indigo-400 transition-colors"
             onClick={() => fileInputRef.current?.click()}
           >
-            <Upload className="h-8 w-8 text-slate-400 mx-auto mb-2" />
+            <Upload className="h-6 w-6 text-slate-400 mx-auto mb-1.5" />
             <p className="text-sm text-slate-600">
               {fileName ? (
                 <span className="font-medium text-indigo-600">{fileName}</span>
               ) : (
-                <>Drop a CSV/TXT file or <span className="text-indigo-600">browse</span></>
+                <>Upload a CSV/TXT lead list or <span className="text-indigo-600">browse file</span></>
               )}
             </p>
-            <p className="text-xs text-slate-400 mt-1">Must include an email column</p>
+            <p className="text-xs text-slate-400 mt-0.5">Supports CSV headers (email, recipient, etc.) or plain text lists</p>
           </div>
           <input
             ref={fileInputRef}
@@ -222,26 +308,60 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
             onChange={handleFileUpload}
           />
 
-          {/* Parse result preview */}
+          {/* Parse result preview & review */}
           {parseResult && (
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <Users className="h-4 w-4 text-indigo-500" />
-                <span className="font-medium">
-                  {parseResult.valid.length} valid recipient{parseResult.valid.length !== 1 ? "s" : ""} detected
-                </span>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                  <Users className="h-4 w-4 text-indigo-500" />
+                  <span>
+                    {parseResult.valid.length} valid recipient{parseResult.valid.length !== 1 ? "s" : ""} detected
+                  </span>
+                </div>
+
+                {parseResult.valid.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowRecipientList(!showRecipientList)}
+                    className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                  >
+                    {showRecipientList ? (
+                      <>Hide list <ChevronUp className="h-3 w-3" /></>
+                    ) : (
+                      <>Review list ({parseResult.valid.length}) <ChevronDown className="h-3 w-3" /></>
+                    )}
+                  </button>
+                )}
               </div>
-              {parseResult.valid.length > 0 && (
-                <div className="flex items-center gap-1 text-xs text-green-700">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {parseResult.valid.slice(0, 3).join(", ")}
-                  {parseResult.valid.length > 3 && ` +${parseResult.valid.length - 3} more`}
+
+              {parseResult.invalid.length > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 p-2 rounded border border-red-100">
+                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>{parseResult.invalid.length} invalid email addresses skipped</span>
                 </div>
               )}
-              {parseResult.invalid.length > 0 && (
-                <div className="flex items-center gap-1 text-xs text-red-600">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  {parseResult.invalid.length} invalid addresses skipped
+
+              {/* Collapsible / Reviewable recipient badges */}
+              {showRecipientList && parseResult.valid.length > 0 && (
+                <div className="max-h-36 overflow-y-auto space-y-1 p-2 bg-white rounded border border-slate-200">
+                  <div className="flex flex-wrap gap-1.5">
+                    {parseResult.valid.map((email) => (
+                      <span
+                        key={email}
+                        className="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200"
+                      >
+                        {email}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRecipient(email)}
+                          className="text-slate-400 hover:text-red-500"
+                          title="Remove recipient"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -297,4 +417,3 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
     </Modal>
   );
 }
-

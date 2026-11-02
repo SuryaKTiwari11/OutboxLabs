@@ -42,3 +42,4 @@ EXPOSE 4000
 
 # Run Prisma migrations then start the server
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+
