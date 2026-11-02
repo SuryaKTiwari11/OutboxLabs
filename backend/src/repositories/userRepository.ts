@@ -1,7 +1,9 @@
-// ─────────────────────────────────────────────────────────────
+// =============================================================================
 //  repositories/userRepository.ts
 //  Repository for User and SenderAccount DB access.
-// ─────────────────────────────────────────────────────────────
+//  Pattern: all DB access for these models lives here — no direct prisma calls
+//  in controllers or services.
+// =============================================================================
 
 import { prisma } from "../config/database";
 
@@ -30,13 +32,13 @@ export class UserRepository {
     return prisma.user.upsert({
       where: { googleId: profile.googleId },
       update: {
-        name: profile.name,
+        name:      profile.name,
         avatarUrl: profile.avatarUrl,
       },
       create: {
-        googleId: profile.googleId,
-        email: profile.email,
-        name: profile.name,
+        googleId:  profile.googleId,
+        email:     profile.email,
+        name:      profile.name,
         avatarUrl: profile.avatarUrl,
       },
     });
@@ -44,10 +46,14 @@ export class UserRepository {
 }
 
 export class SenderAccountRepository {
+  /**
+   * List active sender accounts for a user.
+   * Sorted newest-first (createdAt desc).
+   */
   async findByUser(userId: string) {
     return prisma.senderAccount.findMany({
-      where: { userId },
-      orderBy: { isDefault: "desc" },
+      where:   { userId, isActive: true },
+      orderBy: { createdAt: "desc" },
     });
   }
 
@@ -55,15 +61,17 @@ export class SenderAccountRepository {
     return prisma.senderAccount.findUnique({ where: { id } });
   }
 
+  /** Create a new sender account (called by SenderService). */
   async create(data: {
     userId: string;
-    fromName: string;
+    displayName: string;
     fromEmail: string;
     smtpHost: string;
     smtpPort: number;
     smtpUser: string;
     smtpPassEncrypted: string;
-    isDefault?: boolean;
+    smtpSecure?: boolean;
+    isActive?: boolean;
   }) {
     return prisma.senderAccount.create({ data });
   }
@@ -71,4 +79,3 @@ export class SenderAccountRepository {
 
 export const userRepository = new UserRepository();
 export const senderAccountRepository = new SenderAccountRepository();
-

@@ -20,6 +20,7 @@ import { emailQueue } from "./queues/emailQueue";
 import { emailRouter } from "./routes/emailRoutes";
 import { authRouter } from "./routes/authRoutes";
 import { slackRouter } from "./routes/slackRoutes";
+import { senderRouter } from "./routes/senderRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 import { bullBoardAuth } from "./middleware/auth";
 
@@ -74,9 +75,10 @@ export function createApp(): express.Application {
   });
 
   // ── API Routes ────────────────────────────────────────────────
-  app.use("/api/auth",   authRouter);
-  app.use("/api/emails", emailRouter);
-  app.use("/api/slack",  slackRouter);
+  app.use("/api/auth",    authRouter);
+  app.use("/api/emails",  emailRouter);
+  app.use("/api/slack",   slackRouter);
+  app.use("/api/senders", senderRouter);   // sender account management
 
   // ── 404 handler ───────────────────────────────────────────────
   app.use((_req, res) => {

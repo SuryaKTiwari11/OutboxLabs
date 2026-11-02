@@ -163,7 +163,7 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
             <option value="">Select sender…</option>
             {senders.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.fromName} &lt;{s.fromEmail}&gt;
+                {s.displayName} &lt;{s.fromEmail}&gt;
               </option>
             ))}
           </select>

@@ -15,11 +15,18 @@ export type EmailStatus =
 // ── Sender Account ────────────────────────────────────────────
 export interface SenderAccount {
   id: string;
-  fromName: string;
-  fromEmail: string;
+  displayName: string;   // "My Test Sender"
+  fromEmail: string;     // "abc@ethereal.email"
   smtpHost: string;
   smtpPort: number;
-  isDefault: boolean;
+  smtpUser: string;
+  smtpSecure: boolean;
+  isActive: boolean;
+  createdAt: string;
+  // only present immediately after creation of Ethereal sender
+  etherealPassOnce?: string;
+  etherealUser?: string;
+  etherealInboxUrl?: string;
 }
 
 // ── User ──────────────────────────────────────────────────────

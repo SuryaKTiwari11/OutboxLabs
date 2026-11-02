@@ -18,15 +18,16 @@ import { env } from "../config/env";
 import { logger } from "../utils/logger";
 import { decrypt } from "../utils/crypto";
 
-// Use a local type that mirrors the Prisma SenderAccount shape
-// to avoid circular imports and Prisma coupling in this layer
+// Use a local type that mirrors the Prisma SenderAccount shape.
+// Avoids circular imports and keeps this integration layer decoupled from Prisma.
 interface SenderAccountLike {
-  fromName: string;
+  displayName: string;    // used in "From:" header display name
   fromEmail: string;
   smtpHost: string;
   smtpPort: number;
   smtpUser: string;
   smtpPassEncrypted: string;
+  smtpSecure: boolean;
 }
 
 // ── Default Ethereal credentials (auto-created if empty) ──────
@@ -84,9 +85,9 @@ export function createTransporterForSender(sender: SenderAccountLike): Transport
   const smtpPass = decrypt(sender.smtpPassEncrypted);
 
   return nodemailer.createTransport({
-    host: sender.smtpHost,
-    port: sender.smtpPort,
-    secure: false,
+    host:   sender.smtpHost,
+    port:   sender.smtpPort,
+    secure: sender.smtpSecure,
     auth: {
       user: sender.smtpUser,
       pass: smtpPass,

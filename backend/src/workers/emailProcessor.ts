@@ -143,7 +143,7 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       : await getDefaultTransporter();
 
     smtpResult = await sendEmail(transporter, {
-      from: `"${existing.sender.fromName}" <${existing.sender.fromEmail}>`,
+      from: `"${existing.sender.displayName}" <${existing.sender.fromEmail}>`,
       to: recipient,
       subject,
       html: body,

@@ -33,27 +33,30 @@ model User {
 }
 
 // ── SenderAccount ─────────────────────────────────────────────
-// Represents an Ethereal SMTP "from" address.
+// Represents an SMTP "from" address (Ethereal or custom).
 // Supports multiple senders per user.
+// displayName: human-readable label shown in the UI ("My Sender")
+// isActive: soft-delete flag — false means hidden but history preserved
 model SenderAccount {
-  id           String   @id @default(cuid())
-  userId       String
-  fromName     String
-  fromEmail    String
-  smtpHost     String
-  smtpPort     Int
-  smtpUser     String
-  // Encrypted SMTP password (AES-256)
-  smtpPassEncrypted String
-  isDefault    Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String   @id @default(cuid())
+  userId            String
+  displayName       String                       // UI label e.g. "Default Sender"
+  fromEmail         String
+  smtpHost          String
+  smtpPort          Int
+  smtpUser          String
+  smtpPassEncrypted String                       // AES-256-GCM encrypted
+  smtpSecure        Boolean  @default(false)     // true = port 465 TLS
+  isActive          Boolean  @default(true)      // false = soft-deleted
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   // Relations
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   scheduledEmails ScheduledEmail[]
 
   @@unique([userId, fromEmail])
+  @@index([userId, isActive])
   @@map("sender_accounts")
 }
 

@@ -2,35 +2,41 @@
 #  .gitignore — ReachInbox Email Scheduler Monorepo
 # ─────────────────────────────────────────────────────────────
 
-# Dependencies
+# ── Dependencies ──────────────────────────────────────────────
 node_modules/
 .pnpm-store/
 
-# Build outputs
+# ── AI Agent tooling (local only — never commit) ──────────────
+.agents/
+skills-lock.json
+claude.md
+context.md
+
+# ── Build outputs ─────────────────────────────────────────────
 dist/
 build/
 .next/
 out/
 
-# Environment secrets — NEVER commit
+# ── Environment secrets — NEVER commit ───────────────────────
 .env
 .env.local
 .env.*.local
 
-# Prisma generated client
+# ── Prisma generated client ───────────────────────────────────
 backend/node_modules/.prisma/
 
-# Logs
+# ── Logs ──────────────────────────────────────────────────────
 *.log
 logs/
 npm-debug.log*
 pnpm-debug.log*
 
-# OS
+# ── OS ────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Editor
+# ── Editor ───────────────────────────────────────────────────
 .vscode/settings.json
 .idea/
 *.suo
@@ -39,13 +45,13 @@ Thumbs.db
 *.sln
 *.sw?
 
-# TypeScript
+# ── TypeScript ────────────────────────────────────────────────
 *.tsbuildinfo
 
-# Test coverage
+# ── Test coverage ─────────────────────────────────────────────
 coverage/
 .nyc_output/
 
-# Temp
+# ── Temp ──────────────────────────────────────────────────────
 tmp/
 .tmp/

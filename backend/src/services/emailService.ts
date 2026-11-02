@@ -1,11 +1,11 @@
-// ─────────────────────────────────────────────────────────────
+﻿// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  services/emailService.ts
 //  Business logic for scheduling emails.
-//  Orchestrates: DB → BullMQ → Elasticsearch
+//  Orchestrates: DB â†’ BullMQ â†’ Elasticsearch
 //
 //  Design: Service layer sits between controllers and repositories.
 //  Controllers are thin; all business logic lives here.
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 import { emailRepository } from "../repositories/emailRepository";
 import { enqueueEmailJob, getJobById } from "../queues/emailQueue";
@@ -51,7 +51,7 @@ export class EmailService {
       scheduledAt
     );
 
-    // ── Insert into DB ─────────────────────────────────────
+    // â”€â”€ Insert into DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // P2002 (unique constraint) is caught by errorHandler
     const email = await emailRepository.create({
       idempotencyKey,
@@ -65,7 +65,7 @@ export class EmailService {
       ...(payload.campaignId && { campaign: { connect: { id: payload.campaignId } } }),
     });
 
-    // ── Enqueue into BullMQ ────────────────────────────────
+    // â”€â”€ Enqueue into BullMQ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const jobId = await enqueueEmailJob(
       {
         scheduledEmailId: email.id,
@@ -79,10 +79,10 @@ export class EmailService {
       scheduledAt
     );
 
-    // ── Update DB with job ID ──────────────────────────────
+    // â”€â”€ Update DB with job ID â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     await emailRepository.setBullJobId(email.id, jobId);
 
-    // ── Index into Elasticsearch ───────────────────────────
+    // â”€â”€ Index into Elasticsearch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     await elasticsearchService.indexEmail({
       id: email.id,
       userId,
@@ -150,7 +150,7 @@ export class EmailService {
         });
         results.push({ recipient: recipients[i]!, status: "scheduled" });
       } catch (err: unknown) {
-        // Idempotency key collision → already scheduled, not an error
+        // Idempotency key collision â†’ already scheduled, not an error
         if ((err as { code?: string }).code === "P2002" || (err instanceof AppError && err.statusCode === 409)) {
           results.push({ recipient: recipients[i]!, status: "duplicate" });
         } else {
@@ -164,9 +164,16 @@ export class EmailService {
 
   /**
    * Get scheduled emails for a user.
+   * Shows PENDING (inserted but not yet enqueued), QUEUED (in BullMQ),
+   * and PROCESSING (worker picked it up) - all "in-flight" statuses.
    */
   async getScheduled(userId: string, page = 1, limit = 20) {
-    return emailRepository.findByUser(userId, "QUEUED", page, limit);
+    return emailRepository.findByUser(
+      userId,
+      ["PENDING", "QUEUED", "PROCESSING"],
+      page,
+      limit
+    );
   }
 
   /**
@@ -193,10 +200,10 @@ export class EmailService {
   }
 
   /**
-   * Startup reconciliation — re-enqueue emails that are PENDING/QUEUED
+   * Startup reconciliation â€” re-enqueue emails that are PENDING/QUEUED
    * but not in Redis (e.g., server crashed before enqueue).
    * Called once on server startup.
-   * This is NOT a cron job — runs exactly once per startup.
+   * This is NOT a cron job â€” runs exactly once per startup.
    */
   async reconcileOnStartup(): Promise<void> {
     logger.info("[EmailService] Running startup reconciliation...");
@@ -213,7 +220,7 @@ export class EmailService {
         }
       }
 
-      // Job is missing from Redis → re-enqueue
+      // Job is missing from Redis â†’ re-enqueue
       const idempotencyKey = email.idempotencyKey;
       const jobId = await enqueueEmailJob(
         {
@@ -232,9 +239,10 @@ export class EmailService {
       requeued++;
     }
 
-    logger.info(`[Reconcile] Complete — requeued ${requeued}/${emails.length} emails`);
+    logger.info(`[Reconcile] Complete â€” requeued ${requeued}/${emails.length} emails`);
   }
 }
 
 export const emailService = new EmailService();
+
 

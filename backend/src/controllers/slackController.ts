@@ -6,7 +6,7 @@
 import { Response, NextFunction } from "express";
 import { AuthenticatedRequest, ApiResponse } from "../types";
 import { env } from "../config/env";
-import { encrypt, decrypt } from "../utils/crypto";
+import { encrypt } from "../utils/crypto";
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
 import { logger } from "../utils/logger";
@@ -145,6 +145,4 @@ export const slackController = {
   },
 };
 
-// Suppress unused import warning for decrypt (used in slack integration)
-void decrypt;
 

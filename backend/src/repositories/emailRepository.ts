@@ -21,11 +21,12 @@ export class EmailRepository {
   }
 
   /**
-   * Find emails by user with optional status filter and pagination.
+   * Find emails by user with optional status filter (single or array) and pagination.
+   * Passing an array queries any of those statuses (OR condition via Prisma `in:`).
    */
   async findByUser(
     userId: string,
-    status?: EmailStatus,
+    status?: EmailStatus | EmailStatus[],
     page = 1,
     limit = 20
   ): Promise<{
@@ -34,7 +35,11 @@ export class EmailRepository {
   }> {
     const where = {
       userId,
-      ...(status ? { status } : {}),
+      ...(status
+        ? Array.isArray(status)
+          ? { status: { in: status } }   // multi-status filter
+          : { status }                    // single-status filter
+        : {}),
     };
 
     const [emails, total] = await prisma.$transaction([

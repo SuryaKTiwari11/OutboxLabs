@@ -8,6 +8,7 @@ import axios from "axios";
 import type {
   ApiResponse,
   ScheduledEmail,
+  SenderAccount,
   User,
   BulkScheduleForm,
   ScheduleEmailForm,
@@ -82,6 +83,22 @@ export const emailsApi = {
         `/emails/search?q=${encodeURIComponent(query)}&page=${page}`
       )
       .then((r) => r.data.data!),
+};
+
+// ── Senders ───────────────────────────────────────────────────
+export const sendersApi = {
+  list: () =>
+    apiClient
+      .get<ApiResponse<SenderAccount[]>>("/senders")
+      .then((r) => r.data.data ?? []),
+
+  createEthereal: (displayName = "Default Sender") =>
+    apiClient
+      .post<ApiResponse<SenderAccount & { etherealPassOnce?: string; etherealUser?: string }>>("/senders/ethereal", { displayName })
+      .then((r) => r.data.data!),
+
+  remove: (id: string) =>
+    apiClient.delete<ApiResponse>(`/senders/${id}`).then((r) => r.data),
 };
 
 // ── Slack ─────────────────────────────────────────────────────
