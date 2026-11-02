@@ -1,0 +1,651 @@
+openapi: "3.1.0"
+
+# =============================================================================
+#  openapi.yaml — ReachInbox Email Job Scheduler API
+#  Spec version: 1.0.0
+#  Follows OpenAPI 3.1.0 + RFC 7807 error format.
+#
+#  Base URL: http://localhost:4000/api
+# =============================================================================
+
+info:
+  title: ReachInbox Email Scheduler API
+  version: "1.0.0"
+  description: |
+    Production-grade email job scheduler built with Express, BullMQ, and Prisma.
+
+    ## Authentication
+    All `/api/*` endpoints (except `/api/auth/*`) require a valid JWT cookie,
+    obtained by completing Google OAuth via `GET /api/auth/google`.
+
+    ## Rate Limiting
+    Each sender account has a configurable hourly send limit (default 100/hr),
+    enforced via an atomic Redis Lua script. Exceeding the limit returns `429`.
+
+    ## Idempotency
+    Each scheduled email is assigned a deterministic key:
+    `SHA-256(userId | recipientEmail | scheduledAt)`. Duplicate submissions
+    with the same key return `409 Conflict`.
+  contact:
+    name: ReachInbox Engineering
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:4000/api
+    description: Local development
+  - url: https://api.reachinbox.example.com/api
+    description: Production
+
+# =============================================================================
+# Security
+# =============================================================================
+security:
+  - cookieAuth: []
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: auth_token
+      description: HTTP-only JWT cookie set after Google OAuth login
+
+  # ── Reusable schemas ───────────────────────────────────────────────────────
+  schemas:
+
+    # ── Generic API response wrapper ──────────────────────────────────────────
+    ApiResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          description: Response payload (varies by endpoint)
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    Pagination:
+      type: object
+      required: [page, limit, total, totalPages]
+      properties:
+        page:       { type: integer, minimum: 1 }
+        limit:      { type: integer, minimum: 1 }
+        total:      { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+
+    # ── Error response (RFC 7807) ─────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success: { type: boolean, example: false }
+        error:   { type: string }
+        details: { type: array, items: { type: object } }
+
+    # ── User ──────────────────────────────────────────────────────────────────
+    User:
+      type: object
+      required: [id, email, name]
+      properties:
+        id:        { type: string, format: cuid }
+        email:     { type: string, format: email }
+        name:      { type: string }
+        avatarUrl: { type: string, format: uri, nullable: true }
+
+    # ── Sender Account ────────────────────────────────────────────────────────
+    SenderAccount:
+      type: object
+      required: [id, displayName, fromEmail, smtpHost, smtpPort, smtpUser, isActive, createdAt]
+      properties:
+        id:          { type: string, format: cuid }
+        displayName: { type: string }
+        fromEmail:   { type: string, format: email }
+        smtpHost:    { type: string }
+        smtpPort:    { type: integer }
+        smtpUser:    { type: string }
+        smtpSecure:  { type: boolean }
+        isActive:    { type: boolean }
+        createdAt:   { type: string, format: date-time }
+
+    EtherealSenderResponse:
+      allOf:
+        - $ref: "#/components/schemas/SenderAccount"
+        - type: object
+          properties:
+            etherealInboxUrl: { type: string, format: uri }
+            etherealUser:     { type: string }
+            etherealPassOnce:
+              type: string
+              description: "SMTP password shown ONCE — log into ethereal.email with these credentials"
+
+    # ── Scheduled Email ───────────────────────────────────────────────────────
+    EmailStatus:
+      type: string
+      enum: [PENDING, QUEUED, PROCESSING, SENT, FAILED, CANCELLED]
+
+    ScheduledEmail:
+      type: object
+      required: [id, userId, recipient, subject, status, scheduledAt, createdAt]
+      properties:
+        id:                  { type: string, format: cuid }
+        userId:              { type: string, format: cuid }
+        senderId:            { type: string, format: cuid }
+        recipient:           { type: string, format: email }
+        subject:             { type: string }
+        body:                { type: string }
+        status:              { $ref: "#/components/schemas/EmailStatus" }
+        scheduledAt:         { type: string, format: date-time }
+        sentAt:              { type: string, format: date-time, nullable: true }
+        bullJobId:           { type: string, nullable: true }
+        idempotencyKey:      { type: string }
+        smtpMessageId:       { type: string, nullable: true }
+        etherealPreviewUrl:  { type: string, format: uri, nullable: true }
+        lastError:           { type: string, nullable: true }
+        createdAt:           { type: string, format: date-time }
+        sender:              { $ref: "#/components/schemas/SenderAccount" }
+
+    # ── Slack ─────────────────────────────────────────────────────────────────
+    SlackStatus:
+      type: object
+      properties:
+        connected:   { type: boolean }
+        teamName:    { type: string, nullable: true }
+        connectedAt: { type: string, format: date-time, nullable: true }
+
+# =============================================================================
+# Paths
+# =============================================================================
+paths:
+
+  # ── Auth ───────────────────────────────────────────────────────────────────
+  /auth/google:
+    get:
+      tags: [Auth]
+      summary: Initiate Google OAuth login
+      description: Redirects user to Google's OAuth consent screen.
+      security: []
+      responses:
+        "302":
+          description: Redirect to Google OAuth
+
+  /auth/google/callback:
+    get:
+      tags: [Auth]
+      summary: Google OAuth callback
+      description: |
+        Google redirects here after user grants permission.
+        Sets an HTTP-only JWT cookie and redirects to the frontend dashboard.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        "302":
+          description: Redirect to frontend dashboard with auth cookie set
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Authenticated user profile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/User" }
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout (clear auth cookie)
+      responses:
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
+
+  # ── Senders ────────────────────────────────────────────────────────────────
+  /senders:
+    get:
+      tags: [Senders]
+      summary: List sender accounts
+      description: Returns all active SMTP sender accounts for the authenticated user.
+      responses:
+        "200":
+          description: List of sender accounts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/SenderAccount" }
+
+  /senders/ethereal:
+    post:
+      tags: [Senders]
+      summary: Create an Ethereal (fake) sender
+      description: |
+        Auto-generates Ethereal Email credentials via Nodemailer.
+        No real SMTP server required. Sent emails appear at https://ethereal.email.
+
+        **The `etherealPassOnce` field in the response is shown only once — save it
+        if you need to log into the Ethereal web UI to view sent emails.**
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                  default: "Default Sender"
+                  example: "My Test Sender"
+      responses:
+        "201":
+          description: Ethereal sender created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/EtherealSenderResponse" }
+
+  /senders/custom:
+    post:
+      tags: [Senders]
+      summary: Create a custom SMTP sender
+      description: Provide your own SMTP credentials (Gmail, SendGrid, Mailgun, etc.)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName, fromEmail, smtpHost, smtpPort, smtpUser, smtpPass]
+              properties:
+                displayName: { type: string }
+                fromEmail:   { type: string, format: email }
+                smtpHost:    { type: string, example: "smtp.gmail.com" }
+                smtpPort:    { type: integer, default: 587, example: 587 }
+                smtpUser:    { type: string }
+                smtpPass:    { type: string, format: password }
+                smtpSecure:  { type: boolean }
+      responses:
+        "201":
+          description: Custom sender created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/SenderAccount" }
+
+  /senders/{id}:
+    get:
+      tags: [Senders]
+      summary: Get sender by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Sender account
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/SenderAccount" }
+        "404":
+          description: Sender not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    delete:
+      tags: [Senders]
+      summary: Deactivate a sender account
+      description: Soft-delete (sets `isActive = false`). Preserves email history.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Sender deactivated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
+
+  # ── Emails ─────────────────────────────────────────────────────────────────
+  /emails/schedule:
+    post:
+      tags: [Emails]
+      summary: Schedule a single email
+      description: |
+        Schedules a single email for future delivery using BullMQ delayed jobs.
+
+        **Idempotency**: If the same `(userId, recipientEmail, scheduledAt)` triplet
+        is submitted again, returns `409 Conflict` — no duplicate is created.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipientEmail, subject, body, scheduledAt, senderId]
+              properties:
+                recipientEmail:
+                  type: string
+                  format: email
+                  example: "john@example.com"
+                subject:
+                  type: string
+                  example: "Welcome to ReachInbox"
+                body:
+                  type: string
+                  example: "Hi John, thanks for signing up!"
+                scheduledAt:
+                  type: string
+                  format: date-time
+                  description: Must be in the future (UTC ISO 8601)
+                  example: "2024-12-01T10:00:00.000Z"
+                senderId:
+                  type: string
+                  format: cuid
+                  description: ID of a SenderAccount owned by this user
+                campaignId:
+                  type: string
+                  format: cuid
+                  description: Optional — link to a campaign
+      responses:
+        "201":
+          description: Email scheduled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ScheduledEmail" }
+        "400":
+          description: Invalid input or scheduledAt in the past
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Duplicate — email already scheduled with this idempotency key
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429":
+          description: Hourly rate limit exceeded for this sender
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /emails/bulk-schedule:
+    post:
+      tags: [Emails]
+      summary: Bulk schedule emails to multiple recipients
+      description: |
+        Creates an `EmailCampaign` and schedules one email per recipient,
+        spaced out by `delayBetweenMs`. Duplicate recipients (same idempotency key)
+        are silently skipped — returned in results as `"duplicate"`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipients, subject, body, startAt, delayBetweenMs, hourlyLimit, senderId]
+              properties:
+                recipients:
+                  type: array
+                  items: { type: string, format: email }
+                  minItems: 1
+                  maxItems: 10000
+                subject:       { type: string }
+                body:          { type: string }
+                startAt:
+                  type: string
+                  format: date-time
+                  description: When to send the first email
+                delayBetweenMs:
+                  type: integer
+                  minimum: 0
+                  description: Milliseconds between each email send
+                  example: 60000
+                hourlyLimit:
+                  type: integer
+                  minimum: 1
+                  description: Max emails per hour per sender
+                  example: 100
+                senderId:      { type: string, format: cuid }
+                campaignName:  { type: string }
+      responses:
+        "200":
+          description: Bulk schedule complete
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          campaignId: { type: string }
+                          results:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                recipient: { type: string }
+                                status:
+                                  type: string
+                                  enum: [scheduled, duplicate]
+
+  /emails/scheduled:
+    get:
+      tags: [Emails]
+      summary: List scheduled (in-flight) emails
+      description: Returns emails with status PENDING, QUEUED, or PROCESSING.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Paginated list of scheduled emails
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/ScheduledEmail" }
+                      pagination: { $ref: "#/components/schemas/Pagination" }
+
+  /emails/sent:
+    get:
+      tags: [Emails]
+      summary: List sent emails
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Paginated list of sent emails
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/ScheduledEmail" }
+                      pagination: { $ref: "#/components/schemas/Pagination" }
+
+  /emails/search:
+    get:
+      tags: [Emails]
+      summary: Full-text email search (Elasticsearch)
+      description: Searches across subject, body, recipient, and sender email.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+          description: Search query string
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/EmailStatus" }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          results:
+                            type: array
+                            items: { $ref: "#/components/schemas/ScheduledEmail" }
+                          total: { type: integer }
+
+  /emails/{id}:
+    get:
+      tags: [Emails]
+      summary: Get email by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Email details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ScheduledEmail" }
+        "404":
+          description: Email not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ── Slack ──────────────────────────────────────────────────────────────────
+  /slack/connect:
+    get:
+      tags: [Slack]
+      summary: Initiate Slack OAuth
+      description: Redirects user to Slack OAuth authorization page.
+      responses:
+        "302":
+          description: Redirect to Slack OAuth
+
+  /slack/callback:
+    get:
+      tags: [Slack]
+      summary: Slack OAuth callback
+      description: Exchanges code for token, encrypts, stores, redirects to frontend.
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        "302":
+          description: Redirect to frontend dashboard
+
+  /slack/status:
+    get:
+      tags: [Slack]
+      summary: Get Slack connection status
+      responses:
+        "200":
+          description: Slack connection status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/SlackStatus" }
+
+  /slack/disconnect:
+    delete:
+      tags: [Slack]
+      summary: Disconnect Slack integration
+      responses:
+        "200":
+          description: Slack disconnected
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }

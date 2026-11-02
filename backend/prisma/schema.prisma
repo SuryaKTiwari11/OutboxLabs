@@ -1,0 +1,188 @@
+// ─────────────────────────────────────────────────────────────
+//  Prisma Schema — ReachInbox Email Scheduler
+//  DB: PostgreSQL
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── User ──────────────────────────────────────────────────────
+// Stored after Google OAuth login.
+model User {
+  id            String   @id @default(cuid())
+  googleId      String   @unique
+  email         String   @unique
+  name          String
+  avatarUrl     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  senderAccounts   SenderAccount[]
+  campaigns        EmailCampaign[]
+  scheduledEmails  ScheduledEmail[]
+  slackIntegration SlackIntegration?
+
+  @@map("users")
+}
+
+// ── SenderAccount ─────────────────────────────────────────────
+// Represents an Ethereal SMTP "from" address.
+// Supports multiple senders per user.
+model SenderAccount {
+  id           String   @id @default(cuid())
+  userId       String
+  fromName     String
+  fromEmail    String
+  smtpHost     String
+  smtpPort     Int
+  smtpUser     String
+  // Encrypted SMTP password (AES-256)
+  smtpPassEncrypted String
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduledEmails ScheduledEmail[]
+
+  @@unique([userId, fromEmail])
+  @@map("sender_accounts")
+}
+
+// ── EmailCampaign ─────────────────────────────────────────────
+// Groups a batch of emails scheduled together (bulk upload).
+model EmailCampaign {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  subject     String
+  body        String   @db.Text
+  scheduledAt DateTime
+  status      CampaignStatus @default(PENDING)
+  totalEmails Int      @default(0)
+  sentCount   Int      @default(0)
+  failedCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduledEmails ScheduledEmail[]
+
+  @@map("email_campaigns")
+}
+
+enum CampaignStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+// ── ScheduledEmail ────────────────────────────────────────────
+// Core entity. One row per email to be sent.
+model ScheduledEmail {
+  id              String      @id @default(cuid())
+  userId          String
+  campaignId      String?
+  senderId        String
+  recipient       String
+  subject         String
+  body            String      @db.Text
+  scheduledAt     DateTime
+  sentAt          DateTime?
+  status          EmailStatus @default(PENDING)
+
+  // BullMQ job tracking
+  bullJobId       String?     @unique
+  // Deterministic key: sha256(userId + recipient + scheduledAt)
+  // Prevents duplicate scheduling
+  idempotencyKey  String      @unique
+
+  // SMTP result
+  smtpMessageId   String?
+  etherealPreviewUrl String?
+
+  // Error tracking
+  lastError       String?
+  attemptCount    Int         @default(0)
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign   EmailCampaign?         @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  sender     SenderAccount          @relation(fields: [senderId], references: [id])
+  attempts   EmailDeliveryAttempt[]
+
+  // Indexes for common queries
+  @@index([userId, status])
+  @@index([userId, scheduledAt])
+  @@index([status, scheduledAt])   // Used by startup reconciliation
+  @@index([senderId, status])
+  @@map("scheduled_emails")
+}
+
+enum EmailStatus {
+  PENDING      // Waiting to be processed
+  QUEUED       // Added to BullMQ
+  PROCESSING   // Worker picked it up
+  SENT         // SMTP delivery confirmed
+  FAILED       // Exhausted retries
+  CANCELLED    // Manually cancelled
+}
+
+// ── EmailDeliveryAttempt ─────────────────────────────────────
+// Audit trail for each delivery attempt (for debugging).
+model EmailDeliveryAttempt {
+  id              String   @id @default(cuid())
+  scheduledEmailId String
+  attemptNumber   Int
+  status          AttemptStatus
+  smtpMessageId   String?
+  errorMessage    String?
+  duration        Int?     // milliseconds
+  attemptedAt     DateTime @default(now())
+
+  // Relations
+  scheduledEmail ScheduledEmail @relation(fields: [scheduledEmailId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledEmailId])
+  @@map("email_delivery_attempts")
+}
+
+enum AttemptStatus {
+  SUCCESS
+  FAILURE
+}
+
+// ── SlackIntegration ──────────────────────────────────────────
+// Stores Slack OAuth token per user (one per user/tenant).
+model SlackIntegration {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  teamId        String
+  teamName      String
+  // AES-256 encrypted access token
+  accessTokenEncrypted String
+  botUserId     String?
+  webhookUrl    String?
+  isActive      Boolean  @default(true)
+  connectedAt   DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("slack_integrations")
+}
+

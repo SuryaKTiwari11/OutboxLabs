@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────
+#  .gitignore — ReachInbox Email Scheduler Monorepo
+# ─────────────────────────────────────────────────────────────
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Environment secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+
+# Prisma generated client
+backend/node_modules/.prisma/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# TypeScript
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temp
+tmp/
+.tmp/

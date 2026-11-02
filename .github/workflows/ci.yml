@@ -1,0 +1,142 @@
+# =============================================================================
+#  .github/workflows/ci.yml
+#  CI pipeline: lint + type-check + test on every push/PR
+#  Runs backend and frontend checks in parallel jobs.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9"
+
+jobs:
+  # ── Backend: type-check + test ─────────────────────────────────────────────
+  backend:
+    name: Backend (TypeScript + Jest)
+    runs-on: ubuntu-latest
+
+    # Service containers for integration tests
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: TypeScript type-check
+        run: pnpm exec tsc --noEmit
+
+      - name: Run tests
+        run: pnpm test --coverage --passWithNoTests
+        env:
+          NODE_ENV: test
+          # Minimal env for unit tests (integration tests mock these)
+          DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          REDIS_URL: "redis://localhost:6379"
+          JWT_SECRET: "ci-test-secret-32-chars-minimum!!"
+          ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+          GOOGLE_CLIENT_ID: "ci-placeholder"
+          GOOGLE_CLIENT_SECRET: "ci-placeholder"
+          GOOGLE_CALLBACK_URL: "http://localhost:4000/api/auth/google/callback"
+          SLACK_CLIENT_ID: "ci-placeholder"
+          SLACK_CLIENT_SECRET: "ci-placeholder"
+          SLACK_REDIRECT_URI: "http://localhost:4000/api/slack/callback"
+          FRONTEND_URL: "http://localhost:5173"
+          BULL_BOARD_USERNAME: "admin"
+          BULL_BOARD_PASSWORD: "admin"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage/
+          retention-days: 7
+
+  # ── Frontend: type-check + build ───────────────────────────────────────────
+  frontend:
+    name: Frontend (TypeScript + Vite build)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript type-check
+        run: pnpm exec tsc --noEmit
+
+      - name: Build (production)
+        run: pnpm build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
+
+  # ── Docker Compose validation ──────────────────────────────────────────────
+  docker-compose-validate:
+    name: Validate docker-compose.yml
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose syntax
+        run: docker compose config --quiet

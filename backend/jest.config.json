@@ -1,0 +1,14 @@
+{
+  "preset": "ts-jest",
+  "testEnvironment": "node",
+  "testMatch": ["**/tests/**/*.test.ts"],
+  "moduleNameMapper": {
+    "^@config/(.*)$": "<rootDir>/src/config/$1",
+    "^@services/(.*)$": "<rootDir>/src/services/$1",
+    "^@utils/(.*)$": "<rootDir>/src/utils/$1",
+    "^@types/(.*)$": "<rootDir>/src/types/$1"
+  },
+  "collectCoverageFrom": ["src/**/*.ts", "!src/**/*.d.ts"],
+  "coverageReporters": ["text", "lcov"]
+}
+

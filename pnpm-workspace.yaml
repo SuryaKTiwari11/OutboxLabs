@@ -1,0 +1,8 @@
+# ─────────────────────────────────────────────────────────────
+#  pnpm-workspace.yaml
+#  Declares this repo as a pnpm monorepo.
+#  Running `pnpm install` from root installs deps for all packages.
+# ─────────────────────────────────────────────────────────────
+packages:
+  - backend
+  - frontend
