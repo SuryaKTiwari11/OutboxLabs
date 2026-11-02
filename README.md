@@ -213,7 +213,7 @@ After sending, the API returns `etherealPreviewUrl` — click it to view the ema
 
 ---
 
-## Database Migration
+## Database Migration & Seeding
 
 ```bash
 cd backend
@@ -221,9 +221,14 @@ cd backend
 # Create and apply migrations
 pnpm db:migrate
 
+# (Optional) Seed demo user, Ethereal sender, and sample emails:
+pnpm db:seed
+
 # Open Prisma Studio (visual DB browser)
 pnpm db:studio
 ```
+
+> **Tip for Local Testing**: Running `pnpm db:seed` prints a generated `auth_token` cookie. You can paste this cookie in DevTools to test the dashboard immediately without setting up Google OAuth credentials!
 
 ---
 
@@ -261,6 +266,15 @@ GET  /api/emails/search?q=...   → Full-text search via Elasticsearch
 GET  /api/emails/:id            → Single email detail
 ```
 
+### Senders (all require auth)
+```
+GET    /api/senders               → List active sender accounts
+POST   /api/senders/ethereal      → Auto-create Ethereal SMTP test account
+POST   /api/senders/custom        → Add custom SMTP sender account
+GET    /api/senders/:id           → Get sender account details
+DELETE /api/senders/:id           → Deactivate sender account (soft-delete)
+```
+
 ### Slack
 ```
 GET    /api/slack/connect       → OAuth redirect to Slack
@@ -268,6 +282,9 @@ GET    /api/slack/callback      → Slack OAuth callback
 DELETE /api/slack/disconnect    → Disconnect Slack
 GET    /api/slack/status        → Connection status
 ```
+
+### OpenAPI Specification
+The full interactive API contract is available in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1.0 standard). You can import it directly into Postman, Swagger UI, or Insomnia.
 
 #### Example: Schedule a single email
 ```json
@@ -366,10 +383,12 @@ pnpm test
 pnpm test -- --coverage
 ```
 
-Tests cover:
-- Rate limit Lua logic (mocked Redis)
-- Idempotency key generation
-- AES-256-GCM encryption/decryption
+Unit & Integration test suites (**23 tests passing across 5 suites**):
+- **Rate Limit Service**: Atomic Redis Lua quota reservation, hourly window calculation, fail-open resiliency.
+- **Idempotency**: Deterministic SHA-256 keying `sha256(userId|recipient|scheduledAt)` & duplicate rejection.
+- **Crypto**: AES-256-GCM authenticated encryption/decryption of SMTP passwords and Slack tokens.
+- **Email Service**: Single & bulk scheduling, future time validation, sender ownership checks, and startup crash reconciliation.
+- **Auth Middleware**: JWT generation, cookie extraction, `Authorization: Bearer` fallback, and invalid/expired token rejections.
 
 ---
 
