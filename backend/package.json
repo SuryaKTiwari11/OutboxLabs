@@ -18,6 +18,7 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:load": "tsx scripts/loadTest.ts",
+    "test:integration": "tsx scripts/integrationTest.ts",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit"
   },

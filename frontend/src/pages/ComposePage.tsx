@@ -79,6 +79,7 @@ export function ComposePage() {
 
   // ── Recipient State ───────────────────────────────────────────
   const [recipients, setRecipients] = useState<string[]>([]);
+  const [csvSummary, setCsvSummary] = useState<{ valid: number; invalid: number; duplicates: number } | null>(null);
   const [typedRecipient, setTypedRecipient] = useState("");
   const [isRecipientListOpen, setIsRecipientListOpen] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState("");
@@ -164,12 +165,29 @@ export function ComposePage() {
       complete: (result) => {
         const found = new Set<string>(recipients);
         const emailCols = ["email", "Email", "EMAIL", "recipient", "Recipient"];
+        let valid = 0;
+        let invalid = 0;
+        let duplicates = 0;
 
         result.data.forEach((row) => {
-          for (const col of emailCols) {
-            const val = row[col]?.trim();
-            if (val && EMAIL_REGEX.test(val)) {
-              found.add(val.toLowerCase());
+          const configuredValues = emailCols
+            .map((col) => row[col]?.trim())
+            .filter((value): value is string => Boolean(value));
+          const values = configuredValues.length > 0
+            ? configuredValues
+            : Object.values(row)
+              .flatMap((value) => value.split(/[,;]+/).map((part) => part.trim()))
+              .filter(Boolean);
+
+          for (const value of values) {
+            const normalized = value.toLowerCase();
+            if (!EMAIL_REGEX.test(normalized)) {
+              invalid++;
+            } else if (found.has(normalized)) {
+              duplicates++;
+            } else {
+              valid++;
+              found.add(normalized);
             }
           }
         });
@@ -178,14 +196,24 @@ export function ComposePage() {
           const raw = result.data.map((r) => Object.values(r).join(",")).join("\n");
           raw.split(/[\r\n,;]+/).forEach((t) => {
             const tr = t.trim().toLowerCase();
-            if (EMAIL_REGEX.test(tr)) found.add(tr);
+            if (EMAIL_REGEX.test(tr)) {
+              if (found.has(tr)) duplicates++;
+              else {
+                valid++;
+                found.add(tr);
+              }
+            } else if (tr) {
+              invalid++;
+            }
           });
         }
 
         const updated = Array.from(found);
         setRecipients(updated);
-        toast.success(`Imported ${updated.length} recipients successfully!`);
+        setCsvSummary({ valid, invalid, duplicates });
+        toast.success(`Imported ${valid} valid recipients; ${invalid} invalid and ${duplicates} duplicates skipped.`);
       },
+      error: () => toast.error("Unable to parse this CSV/TXT file"),
     });
     // Reset file input
     e.target.value = "";
@@ -690,6 +718,13 @@ export function ComposePage() {
               <span className="text-[16px] font-[400]">Upload List</span>
             </button>
           </div>
+          {csvSummary && (
+            <p className="mt-2 text-xs text-[#667085]">
+              File summary: <span className="text-[#00A63E]">{csvSummary.valid} valid</span>
+              {" · "}<span className="text-[#D92D20]">{csvSummary.invalid} invalid</span>
+              {" · "}<span>{csvSummary.duplicates} duplicates skipped</span>
+            </p>
+          )}
 
           {/* Row "Subject": same underline style, placeholder "Subject" #A1A1A1 16px */}
           <div className="flex items-center h-[52px] border-b border-[#E5E7EB]">

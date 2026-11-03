@@ -52,7 +52,7 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
   // ── Step 1: Idempotency & Fresh State Fetch ─────────────────
   const email = await prisma.scheduledEmail.findUnique({
     where: { id: scheduledEmailId },
-    include: { sender: true },
+    include: { sender: true, campaign: true },
   });
 
   if (!email) {
@@ -85,7 +85,10 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
   });
 
   // ── Step 3: Atomic Distributed Rate Limit Check ─────────────
-  const rateResult = await rateLimitService.tryReserveSlot(senderId);
+  const rateResult = await rateLimitService.tryReserveSlot(
+    senderId,
+    email.campaign?.hourlyLimit ?? env.MAX_EMAILS_PER_HOUR_PER_SENDER
+  );
 
   if (!rateResult.allowed) {
     rateLimitHitsCounter.inc({ senderId });

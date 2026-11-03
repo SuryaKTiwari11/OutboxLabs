@@ -10,11 +10,11 @@
 import { emailRepository } from "../repositories/emailRepository";
 import { enqueueEmailJob, getJobById } from "../queues/emailQueue";
 import { elasticsearchService } from "../integrations/elasticsearch";
-import { generateIdempotencyKey } from "../utils/idempotency";
 import { logger } from "../utils/logger";
 import { ScheduleEmailPayload, BulkSchedulePayload, EmailSearchParams } from "../types";
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
+import { outboxService } from "./outboxService";
 
 export class EmailService {
   /**
@@ -45,42 +45,10 @@ export class EmailService {
       throw new AppError(404, "Sender account not found");
     }
 
-    const idempotencyKey = generateIdempotencyKey(
-      userId,
-      payload.recipientEmail,
-      scheduledAt
-    );
-
-    // ── Insert into DB ─────────────────────────────────────
-    // P2002 (unique constraint) is caught by errorHandler
-    const email = await emailRepository.create({
-      idempotencyKey,
-      recipient: payload.recipientEmail,
-      subject: payload.subject,
-      body: payload.body,
-      scheduledAt,
-      status: "PENDING",
-      user: { connect: { id: userId } },
-      sender: { connect: { id: payload.senderId } },
-      ...(payload.campaignId && { campaign: { connect: { id: payload.campaignId } } }),
+    const email = await outboxService.createEmailWithOutbox(userId, {
+      ...payload,
+      hourlyLimit: payload.hourlyLimit,
     });
-
-    // ── Enqueue into BullMQ ────────────────────────────────
-    const jobId = await enqueueEmailJob(
-      {
-        scheduledEmailId: email.id,
-        userId,
-        senderId: payload.senderId,
-        recipient: payload.recipientEmail,
-        subject: payload.subject,
-        body: payload.body,
-        idempotencyKey,
-      },
-      scheduledAt
-    );
-
-    // ── Update DB with job ID ──────────────────────────────
-    await emailRepository.setBullJobId(email.id, jobId);
 
     // ── Index into Elasticsearch ───────────────────────────
     await elasticsearchService.indexEmail({
@@ -99,7 +67,7 @@ export class EmailService {
 
     logger.info(`[EmailService] Email scheduled`, {
       emailId: email.id,
-      jobId,
+      jobId: email.bullJobId ?? "pending-outbox",
       recipient: payload.recipientEmail,
       scheduledAt: scheduledAt.toISOString(),
     });
@@ -112,7 +80,7 @@ export class EmailService {
    * Spaces them out by delayBetweenMs.
    */
   async scheduleBulk(userId: string, payload: BulkSchedulePayload) {
-    const { recipients, subject, body, startAt, delayBetweenMs, senderId, campaignName } =
+    const { recipients, subject, body, startAt, delayBetweenMs, hourlyLimit, senderId, campaignName } =
       payload;
 
     // Validate sender
@@ -130,6 +98,7 @@ export class EmailService {
         body,
         scheduledAt: new Date(startAt),
         totalEmails: recipients.length,
+        hourlyLimit,
         status: "IN_PROGRESS",
       },
     });
@@ -147,6 +116,7 @@ export class EmailService {
           scheduledAt: scheduledAt.toISOString(),
           senderId,
           campaignId: campaign.id,
+          hourlyLimit,
         });
         results.push({ recipient: recipients[i]!, status: "scheduled" });
       } catch (err: unknown) {

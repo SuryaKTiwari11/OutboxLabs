@@ -97,6 +97,8 @@ export class OutboxDispatcher {
             senderId: payload.senderId,
             recipient: payload.recipient,
             subject: payload.subject,
+            body: payload.body,
+            hourlyLimit: payload.hourlyLimit,
           },
           scheduledAt
         );
@@ -153,4 +155,3 @@ export class OutboxDispatcher {
 }
 
 export const outboxDispatcher = new OutboxDispatcher();
-

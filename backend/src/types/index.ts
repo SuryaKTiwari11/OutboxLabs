@@ -54,6 +54,7 @@ export interface ScheduleEmailPayload {
   scheduledAt: string; // ISO 8601
   senderId: string;
   campaignId?: string;
+  hourlyLimit?: number;
 }
 
 export interface BulkSchedulePayload {
@@ -78,6 +79,7 @@ export interface EmailJobData {
   recipient?: string;
   subject?: string;
   body?: string;
+  hourlyLimit?: number;
 }
 
 export interface IndexingJobData {
@@ -130,4 +132,3 @@ export interface EmailSearchResult {
   scheduledAt: string;
   sentAt?: string;
 }
-

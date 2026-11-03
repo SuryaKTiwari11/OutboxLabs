@@ -184,7 +184,8 @@ pnpm dev
 |---|---|---|
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
 | `REDIS_HOST` / `REDIS_PORT` | ✅ | Redis connection |
-| `ELASTICSEARCH_URL` | ✅ | ES node URL |
+| `ELASTICSEARCH_URL` | ✅ | Elasticsearch/OpenSearch node URL |
+| `ELASTICSEARCH_API_KEY` | Optional | Elastic Cloud API key; never commit this value |
 | `GOOGLE_CLIENT_ID` | ✅ | Google OAuth app client ID |
 | `GOOGLE_CLIENT_SECRET` | ✅ | Google OAuth app client secret |
 | `GOOGLE_CALLBACK_URL` | ✅ | `http://localhost:4000/api/auth/google/callback` |
@@ -575,5 +576,4 @@ When designing and evaluating distributed scheduling architectures, understandin
 - [ ] Grant private repo access to GitHub users: `Mitrajit` and `Yadav036`.
 - [ ] Record and upload 5-minute Loom/YouTube demo video.
 - [ ] Complete the submission form: [Assignment Submission Form](https://forms.clickup.com/9005062261/f/8cbwp3n-8876/6NNNJ92DV93PQTAYST).
-
 

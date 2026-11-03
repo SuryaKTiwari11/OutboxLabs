@@ -56,6 +56,7 @@ export const env = {
 
   // Elasticsearch
   ELASTICSEARCH_URL: optionalEnv("ELASTICSEARCH_URL", "http://localhost:9200"),
+  ELASTICSEARCH_API_KEY: process.env["ELASTICSEARCH_API_KEY"],
   ELASTICSEARCH_INDEX_EMAILS: optionalEnv("ELASTICSEARCH_INDEX_EMAILS", "emails"),
 
   // Google OAuth
@@ -100,4 +101,3 @@ export const env = {
     return this.NODE_ENV === "development";
   },
 } as const;
-

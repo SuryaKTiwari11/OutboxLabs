@@ -73,7 +73,6 @@ export async function runLoadTest(options: LoadTestOptions = {}): Promise<void> 
 
   for (let b = 0; b < totalEmails / batchSize; b++) {
     const emailBatch = [];
-    const outboxBatch = [];
 
     for (let i = 0; i < batchSize; i++) {
       const idx = b * batchSize + i;
@@ -93,25 +92,44 @@ export async function runLoadTest(options: LoadTestOptions = {}): Promise<void> 
         senderId,
       });
 
-      outboxBatch.push({
-        aggregateType: "EMAIL",
-        aggregateId: idempotencyKey,
-        eventType: "EMAIL_SCHEDULED",
-        payload: JSON.stringify({
-          recipient,
-          senderId,
-          scheduledAt: scheduledAt.toISOString(),
-          idempotencyKey,
-        }),
-        status: "PENDING" as const,
-      });
     }
 
-    // Atomic batch insert
-    await prisma.$transaction([
-      prisma.scheduledEmail.createMany({ data: emailBatch, skipDuplicates: true }),
-      prisma.outboxEvent.createMany({ data: outboxBatch }),
-    ]);
+    // Keep the email rows and their outbox events in one transaction. The
+    // second query resolves generated email IDs before creating events.
+    await prisma.$transaction(async (tx) => {
+      await tx.scheduledEmail.createMany({ data: emailBatch, skipDuplicates: true });
+      const createdEmails = await tx.scheduledEmail.findMany({
+        where: { idempotencyKey: { in: emailBatch.map((email) => email.idempotencyKey) } },
+        select: {
+          id: true,
+          idempotencyKey: true,
+          userId: true,
+          senderId: true,
+          recipient: true,
+          subject: true,
+          scheduledAt: true,
+        },
+      });
+
+      await tx.outboxEvent.createMany({
+        data: createdEmails.map((email) => ({
+          aggregateType: "EMAIL",
+          aggregateId: email.id,
+          eventType: "EMAIL_SCHEDULED",
+          payload: JSON.stringify({
+            scheduledEmailId: email.id,
+            userId: email.userId,
+            senderId: email.senderId,
+            recipient: email.recipient,
+            subject: email.subject,
+            scheduledAt: email.scheduledAt.toISOString(),
+            idempotencyKey: email.idempotencyKey,
+          }),
+          status: "PENDING" as const,
+        })),
+        skipDuplicates: true,
+      });
+    });
 
     createdCount += batchSize;
     process.stdout.write(`  Progress: ${createdCount}/${totalEmails} emails committed...\r`);
@@ -132,7 +150,16 @@ export async function runLoadTest(options: LoadTestOptions = {}): Promise<void> 
 }
 
 if (require.main === module) {
-  runLoadTest()
+  const args = new Map(
+    process.argv.slice(2).flatMap((argument) => {
+      const [key, value] = argument.split("=");
+      return key && value ? [[key, value] as [string, string]] : [];
+    })
+  );
+  runLoadTest({
+    totalEmails: args.has("--totalEmails") ? Number(args.get("--totalEmails")) : undefined,
+    batchSize: args.has("--batchSize") ? Number(args.get("--batchSize")) : undefined,
+  })
     .catch((err) => {
       logger.error("[LoadTest] Simulation failed:", err);
       process.exit(1);
@@ -141,4 +168,3 @@ if (require.main === module) {
       await prisma.$disconnect();
     });
 }
-

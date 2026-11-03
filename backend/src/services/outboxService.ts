@@ -68,8 +68,10 @@ export class OutboxService {
             senderId: payload.senderId,
             recipient: payload.recipientEmail,
             subject: payload.subject,
+            body: payload.body,
             scheduledAt: scheduledAt.toISOString(),
             idempotencyKey,
+            hourlyLimit: payload.hourlyLimit,
           }),
           status: "PENDING",
         },
@@ -91,4 +93,3 @@ export class OutboxService {
 }
 
 export const outboxService = new OutboxService();
-

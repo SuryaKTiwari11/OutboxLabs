@@ -55,14 +55,14 @@ export class SlackService {
       return;
     }
 
-    // 2. Check deduplication (don't spam the same notification within 1 hour)
+    // 2. Atomically claim this notification window before posting.
     const hourWindow = Math.floor(Date.now() / 3_600_000);
     const dedupKey = `slack-notif:${userId || "system"}:${senderEmail}:${hourWindow}`;
     const redis = getRedisClient();
 
     try {
-      const alreadySent = await redis.get(dedupKey);
-      if (alreadySent) {
+      const claimed = await redis.set(dedupKey, "1", "EX", 65 * 60, "NX");
+      if (claimed !== "OK") {
         logger.debug(`[Slack] Rate-limit notification already sent this hour`, {
           userId,
           senderEmail,
@@ -78,15 +78,13 @@ export class SlackService {
       const message = this.buildRateLimitMessage(senderEmail, limitReached, nextWindowAt);
       await this.postMessage(token, message, channel);
 
-      // Mark as sent in Redis
-      try {
-        await redis.setex(dedupKey, 65 * 60, "1");
-      } catch {
-        // ignore redis error
-      }
-
       logger.info(`[Slack] Rate-limit notification sent`, { userId, senderEmail, channel });
     } catch (err) {
+      try {
+        await redis.del(dedupKey);
+      } catch {
+        logger.warn("[Slack] Failed to release notification deduplication claim");
+      }
       // Never let Slack errors break the email pipeline
       logger.error(`[Slack] Failed to send notification`, { error: err, userId });
     }
@@ -153,4 +151,3 @@ export class SlackService {
 }
 
 export const slackService = new SlackService();
-

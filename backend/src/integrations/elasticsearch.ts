@@ -46,7 +46,12 @@ export class ElasticsearchService {
   private ready = false;
 
   constructor() {
-    this.client = new Client({ node: env.ELASTICSEARCH_URL });
+    this.client = new Client({
+      node: env.ELASTICSEARCH_URL,
+      ...(env.ELASTICSEARCH_API_KEY
+        ? { auth: { apiKey: env.ELASTICSEARCH_API_KEY } }
+        : {}),
+    });
   }
 
   isReady(): boolean {
@@ -185,4 +190,3 @@ export class ElasticsearchService {
 }
 
 export const elasticsearchService = new ElasticsearchService();
-

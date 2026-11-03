@@ -53,7 +53,7 @@ export class RateLimitService {
    * Returns { allowed: true } if within limit, or
    *         { allowed: false, nextWindowMs } if limit exceeded.
    */
-  async tryReserveSlot(senderId: string): Promise<RateLimitResult> {
+  async tryReserveSlot(senderId: string, maxPerHour = this.maxPerHour): Promise<RateLimitResult> {
     const redis = getRedisClient();
     const hourWindow = this.getCurrentHourWindow();
     const key = `ratelimit:${senderId}:${hourWindow}`;
@@ -64,7 +64,7 @@ export class RateLimitService {
         ATOMIC_INCREMENT_LUA,
         1,         // number of keys
         key,       // KEYS[1]
-        this.maxPerHour.toString(), // ARGV[1]
+        maxPerHour.toString(), // ARGV[1]
         ttlSeconds.toString()       // ARGV[2]
       )) as number;
 
@@ -72,13 +72,13 @@ export class RateLimitService {
         // Limit exceeded
         const nextWindowMs = this.msUntilNextHourWindow();
         logger.warn(`[RateLimit] Sender ${senderId} reached hourly limit`, {
-          limit: this.maxPerHour,
+          limit: maxPerHour,
           nextWindowMs,
         });
         return {
           allowed: false,
           currentCount: this.maxPerHour,
-          limit: this.maxPerHour,
+          limit: maxPerHour,
           nextWindowMs,
         };
       }
@@ -86,12 +86,12 @@ export class RateLimitService {
       return {
         allowed: true,
         currentCount: result,
-        limit: this.maxPerHour,
+        limit: maxPerHour,
       };
     } catch (err) {
       // Redis error → fail open (allow email) to avoid blocking all sends
       logger.error("[RateLimit] Redis error, failing open", { error: err });
-      return { allowed: true, currentCount: 0, limit: this.maxPerHour };
+      return { allowed: true, currentCount: 0, limit: maxPerHour };
     }
   }
 
@@ -138,4 +138,3 @@ export class RateLimitService {
 
 // Singleton instance
 export const rateLimitService = new RateLimitService();
-

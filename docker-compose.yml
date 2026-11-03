@@ -39,24 +39,32 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Elasticsearch (Optional — disabled to preserve C: disk space) ───
-  # elasticsearch:
-  #   image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
-  #   container_name: reachinbox_elasticsearch
-  #   restart: unless-stopped
-  #   environment:
-  #     - discovery.type=single-node
-  #     - xpack.security.enabled=false
-  #     - ES_JAVA_OPTS=-Xms512m -Xmx512m
-  #     - "cluster.name=reachinbox-cluster"
-  #   ports:
-  #     - "${ELASTICSEARCH_PORT:-9200}:9200"
-  #   volumes:
-  #     - elasticsearch_data:/usr/share/elasticsearch/data
+  # ── Elasticsearch (opt-in; not required for the core demo) ───────────
+  # Start it only when demonstrating full-text indexing:
+  #   docker compose --profile search up -d
+  # PostgreSQL search fallback remains available without this service.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    container_name: reachinbox_elasticsearch
+    profiles: ["search"]
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - "cluster.name=reachinbox-cluster"
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
 
 volumes:
   postgres_data:
   redis_data:
-  # elasticsearch_data:
-
+  elasticsearch_data:
 

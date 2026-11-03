@@ -69,6 +69,7 @@ model EmailCampaign {
   subject     String
   body        String   @db.Text
   scheduledAt DateTime
+  hourlyLimit Int?
   status      CampaignStatus @default(PENDING)
   totalEmails Int      @default(0)
   sentCount   Int      @default(0)
@@ -216,5 +217,4 @@ enum OutboxStatus {
   PUBLISHED
   FAILED
 }
-
 

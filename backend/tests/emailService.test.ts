@@ -20,6 +20,7 @@ import { enqueueEmailJob, getJobById } from "../src/queues/emailQueue";
 import { elasticsearchService } from "../src/integrations/elasticsearch";
 import { prisma } from "../src/config/database";
 import { AppError } from "../src/middleware/errorHandler";
+import { outboxService } from "../src/services/outboxService";
 
 jest.mock("../src/repositories/emailRepository", () => ({
   emailRepository: {
@@ -51,6 +52,12 @@ jest.mock("../src/config/database", () => ({
     emailCampaign: {
       create: jest.fn(),
     },
+  },
+}));
+
+jest.mock("../src/services/outboxService", () => ({
+  outboxService: {
+    createEmailWithOutbox: jest.fn(),
   },
 }));
 
@@ -108,9 +115,7 @@ describe("EmailService", () => {
         scheduledAt: futureDate,
         createdAt: new Date(),
       };
-      (emailRepository.create as jest.Mock).mockResolvedValue(mockCreatedEmail);
-      (enqueueEmailJob as jest.Mock).mockResolvedValue("bull-job-999");
-      (emailRepository.setBullJobId as jest.Mock).mockResolvedValue(mockCreatedEmail);
+      (outboxService.createEmailWithOutbox as jest.Mock).mockResolvedValue(mockCreatedEmail);
 
       const result = await emailService.scheduleSingle(mockUserId, {
         recipientEmail: "lead@example.com",
@@ -121,9 +126,8 @@ describe("EmailService", () => {
       });
 
       expect(result).toBe(mockCreatedEmail);
-      expect(emailRepository.create).toHaveBeenCalled();
-      expect(enqueueEmailJob).toHaveBeenCalled();
-      expect(emailRepository.setBullJobId).toHaveBeenCalledWith("email-789", "bull-job-999");
+      expect(outboxService.createEmailWithOutbox).toHaveBeenCalled();
+      expect(enqueueEmailJob).not.toHaveBeenCalled();
       expect(elasticsearchService.indexEmail).toHaveBeenCalledWith(
         expect.objectContaining({
           id: "email-789",
@@ -175,4 +179,3 @@ describe("EmailService", () => {
     });
   });
 });
-
