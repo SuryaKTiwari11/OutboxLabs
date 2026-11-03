@@ -3,8 +3,8 @@
 //  Redirects unauthenticated users to /login.
 // ─────────────────────────────────────────────────────────────
 
-import { Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { LoginPage } from "../pages/LoginPage";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -22,7 +22,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <LoginPage />;
   }
 
   return <>{children}</>;

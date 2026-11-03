@@ -54,26 +54,18 @@ export function ComposePage() {
   const recipientListRef = useRef<HTMLDivElement>(null);
 
   // ── Sender Accounts State ─────────────────────────────────────
-  const [senders, setSenders] = useState<Array<{ id: string; fromEmail: string; displayName: string }>>([
-    {
-      id: "snd_user",
-      fromEmail: user?.email || "oliver.brown@domain.io",
-      displayName: user?.name || "Oliver Brown",
-    },
-    { id: "snd_support", fromEmail: "support@domain.io", displayName: "Support Team" },
-    { id: "snd_sales", fromEmail: "sales@domain.io", displayName: "Sales Outreach" },
-  ]);
-  const [selectedSenderId, setSelectedSenderId] = useState("snd_user");
+  const [senders, setSenders] = useState<Array<{ id: string; fromEmail: string; displayName: string }>>([]);
+  const [selectedSenderId, setSelectedSenderId] = useState("");
   const [isFromDropdownOpen, setIsFromDropdownOpen] = useState(false);
 
   // Fetch real senders if available or synchronize user
   useEffect(() => {
     if (user?.email) {
       setSenders((prev) => [
-        { id: "snd_user", fromEmail: user.email, displayName: user.name || user.email },
+        { id: "user", fromEmail: user.email, displayName: user.name || user.email },
         ...prev.filter((s) => s.fromEmail !== user.email),
       ]);
-      setSelectedSenderId("snd_user");
+      setSelectedSenderId((current) => current || "user");
     }
     sendersApi.list().then((list) => {
       if (list && list.length > 0) {
@@ -83,7 +75,7 @@ export function ComposePage() {
     }).catch(() => {});
   }, [user]);
 
-  const currentSender = senders.find((s) => s.id === selectedSenderId) || senders[0];
+  const currentSender = senders.find((s) => s.id === selectedSenderId) ?? senders[0];
 
   // ── Recipient State ───────────────────────────────────────────
   const [recipients, setRecipients] = useState<string[]>([]);
@@ -275,6 +267,10 @@ export function ComposePage() {
       toast.error("Please add at least one recipient");
       return;
     }
+    if (!selectedSenderId) {
+      toast.error("Please select a sender account");
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -315,11 +311,8 @@ export function ComposePage() {
         isScheduled ? "Emails scheduled successfully!" : "Emails sent successfully!"
       );
       navigate("/");
-    } catch {
-      toast.success(
-        isScheduled ? "Emails scheduled successfully!" : "Emails sent successfully!"
-      );
-      navigate("/");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to schedule emails");
     } finally {
       setIsSubmitting(false);
     }
@@ -482,9 +475,8 @@ export function ComposePage() {
         </div>
       )}
 
-      {/* FORM COLUMN: 1040px wide, centered (x 200 -> 1240) */}
-      <main className="w-full flex justify-center pt-[20px] pb-[60px]">
-        <div className="w-[1040px] flex flex-col">
+      <main className="w-full flex justify-center px-4 md:px-8 pt-5 pb-[60px]">
+        <div className="w-full max-w-[1040px] flex flex-col">
           {/* Row "From": chip 222x38, bg #F5F5F5, radius 10px, padding-left 10px, text "oliver.brown@domain.io" 16px #000 */}
           <div className="flex items-center h-[52px] relative">
             <span className="w-[56px] text-[14px] font-[400] text-[#010715]">
@@ -495,7 +487,7 @@ export function ComposePage() {
               className="w-[222px] h-[38px] bg-[#F5F5F5] rounded-[10px] pl-[10px] pr-[12px] flex items-center justify-between cursor-pointer hover:bg-[#eeeeee] transition-colors select-none"
             >
               <span className="text-[16px] text-[#000000] truncate font-[400]">
-                {currentSender.fromEmail}
+                {currentSender?.fromEmail ?? "Select a sender"}
               </span>
               <ChevronDown className="w-[14px] h-[14px] text-[#99A1AF] stroke-[1.5]" />
             </div>

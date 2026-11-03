@@ -31,7 +31,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     await authApi.logout();
     queryClient.clear();
-    window.location.href = "/login";
+    // Keep logout on the deployed SPA entry point; static hosts may not
+    // rewrite a direct /login navigation to index.html.
+    window.location.href = "/";
   };
 
   return (
@@ -53,4 +55,3 @@ export function useAuth(): AuthContextValue {
   if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
   return ctx;
 }
-

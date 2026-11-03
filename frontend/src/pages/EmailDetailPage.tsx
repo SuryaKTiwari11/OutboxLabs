@@ -24,7 +24,7 @@ export function EmailDetailPage() {
   const [isStarred, setIsStarred] = useState(false);
 
   const displayAvatar = user?.avatarUrl || "/avatar.png";
-  const displayName = user?.name || "Oliver Brown";
+  const displayName = user?.name || "Account";
 
   const { data: email, isLoading, isError } = useQuery({
     queryKey: ["email", id],
@@ -61,7 +61,7 @@ export function EmailDetailPage() {
 
   const senderName = email.sender?.displayName || email.sender?.fromEmail || "Sender";
   const senderInitial = senderName.charAt(0).toUpperCase() || "A";
-  const senderEmail = email.sender?.fromEmail || "sender@example.com";
+  const senderEmail = email.sender?.fromEmail || "Unknown sender";
 
   // Formatted date
   let formattedDate = email.sentAt || email.scheduledAt;
@@ -80,7 +80,7 @@ export function EmailDetailPage() {
   return (
     <div className="min-h-screen w-full bg-white flex flex-col font-sans">
       {/* HEADER (76px tall, items vertically centered) */}
-      <header className="w-full h-[76px] flex items-center justify-between px-[18px] border-b border-[#F8F9FA]">
+      <header className="w-full min-h-[76px] flex items-center justify-between gap-3 px-4 md:px-[18px] border-b border-[#F8F9FA]">
         {/* Left: back arrow 24px, 18px from left edge */}
         <div className="flex items-center gap-[8px]">
           <button
@@ -90,7 +90,7 @@ export function EmailDetailPage() {
           >
             <ArrowLeft className="w-[20px] h-[20px] stroke-[1.5]" />
           </button>
-          <h1 className="text-[24px] font-[400] text-[#101828] tracking-[-0.01em] ml-[8px]">
+          <h1 className="min-w-0 truncate text-[20px] md:text-[24px] font-[400] text-[#101828] tracking-[-0.01em] ml-[8px]">
             {email.subject}
           </h1>
         </div>
@@ -131,8 +131,8 @@ export function EmailDetailPage() {
       </header>
 
       {/* BODY: centered column 1040px wide */}
-      <main className="w-full flex justify-center pt-[24px] pb-[60px]">
-        <div className="w-[1040px] flex flex-col">
+      <main className="w-full flex justify-center px-4 md:px-8 pt-6 pb-[60px]">
+        <div className="w-full max-w-[1040px] flex flex-col">
           {/* Sender row */}
           <div className="flex items-start justify-between w-full">
             <div className="flex items-center gap-[16px]">
@@ -159,7 +159,7 @@ export function EmailDetailPage() {
             </div>
 
             {/* Date and Ethereal preview badge */}
-            <div className="flex flex-col items-end gap-[6px]">
+            <div className="flex flex-col items-end gap-[6px] text-right">
               <span className="text-[14px] text-[#6A7282] pt-[2px]">
                 {formattedDate}
               </span>
@@ -178,7 +178,7 @@ export function EmailDetailPage() {
           </div>
 
           {/* Message body indented 56px */}
-          <div className="pl-[56px] pt-[24px] flex flex-col text-[16px] leading-[24px] text-[#1E2939] space-y-[20px]">
+          <div className="pl-0 md:pl-[56px] pt-[24px] flex flex-col text-[16px] leading-[24px] text-[#1E2939] space-y-[20px]">
             {email.body.split("\n\n").map((para, i) => (
               <p key={i} className="whitespace-pre-line">
                 {para}
