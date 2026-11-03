@@ -272,6 +272,16 @@ in a new tab. The browser will show the HTTP Basic Auth prompt. Bull Board
 credentials must remain backend/deployment secrets; putting them in
 `VITE_*` variables would expose them to every visitor.
 
+For this assignment demo, the displayed credentials are:
+
+```text
+Username: admin
+Password: admin_secret
+```
+
+These are intentionally simple demo credentials only. Change
+`BULL_BOARD_USERNAME` and `BULL_BOARD_PASSWORD` before any real deployment.
+
 Queues:
 
 | Queue | Purpose |

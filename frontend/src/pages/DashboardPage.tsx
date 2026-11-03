@@ -27,6 +27,10 @@ type Tab = "scheduled" | "sent";
 const bullBoardUrl =
   import.meta.env.VITE_BULL_BOARD_URL?.trim() ||
   "https://outboxlabs-odvu.onrender.com/admin/queues";
+const bullBoardUsername =
+  import.meta.env.VITE_BULL_BOARD_USERNAME?.trim() || "admin";
+const bullBoardPassword =
+  import.meta.env.VITE_BULL_BOARD_PASSWORD?.trim() || "admin_secret";
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -227,6 +231,12 @@ export function DashboardPage() {
           <ExternalLink className="w-[15px] h-[15px]" />
           BullMQ Board
         </a>
+        <div className="w-full md:w-[236px] rounded-[10px] border border-[#E4E7EC] bg-[#F9FAFB] px-3 py-2 mb-[20px] text-[11px] text-[#667085]">
+          <div className="font-[600] text-[#344054] mb-1">Assignment demo credentials</div>
+          <div>Username: <span className="font-mono text-[#101828]">{bullBoardUsername}</span></div>
+          <div>Password: <span className="font-mono text-[#101828]">{bullBoardPassword}</span></div>
+          <div className="mt-1 text-[10px]">Change these before any real deployment.</div>
+        </div>
 
         {/* 4. Section label "CORE": 10px, uppercase, letter-spacing ~0.5px, #B6B6B6, indented 16px from block's left */}
         <div className="pl-[16px] text-[10px] uppercase font-[500] tracking-[0.5px] text-[#B6B6B6] mb-[8px]">
