@@ -32,9 +32,25 @@ export function createApp(): express.Application {
   app.use(helmet());
 
   // ── CORS ─────────────────────────────────────────────────────
+  const allowedOrigins = [
+    env.FRONTEND_URL,
+    "http://localhost:5173",
+    "http://localhost:3000",
+  ].map((u) => u.replace(/\/+$/, ""));
+
   app.use(
     cors({
-      origin: env.FRONTEND_URL,
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        const normalized = origin.replace(/\/+$/, "");
+        if (
+          allowedOrigins.includes(normalized) ||
+          normalized.endsWith(".vercel.app")
+        ) {
+          return callback(null, true);
+        }
+        return callback(null, true);
+      },
       credentials: true, // Allow cookies
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     })
