@@ -59,7 +59,7 @@ export function LoginPage() {
 
   const handleGoogleClick = () => {
     localStorage.removeItem("auth_token");
-    window.location.href = "/api/auth/google";
+    window.location.href = authApi.googleLoginUrl();
   };
 
   return (
