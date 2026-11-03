@@ -11,6 +11,57 @@ PostgreSQL, and Redis cannot participate in one atomic transaction, so the
 SMTP acceptance ambiguity window is documented instead of claiming impossible
 exactly-once delivery.
 
+## Live Deployment
+
+| Component | Deployment | URL / purpose |
+|---|---|---|
+| Frontend | Vercel | [surya-outbox-labs-five.vercel.app](https://surya-outbox-labs-five.vercel.app/) |
+| Express API and BullMQ workers | Render | [outboxlabs-odvu.onrender.com](https://outboxlabs-odvu.onrender.com/) |
+| API base URL | Render | [outboxlabs-odvu.onrender.com/api](https://outboxlabs-odvu.onrender.com/api) |
+| BullMQ Board | Render | [Open deployed queue dashboard](https://outboxlabs-odvu.onrender.com/admin/queues) |
+| Redis and BullMQ persistence | Upstash Redis | Hosted Redis used for queues, delayed jobs, rate limits, and deduplication |
+| Search | Elastic Cloud | Hosted Elasticsearch used for email indexing and search |
+| Relational persistence | PostgreSQL | Prisma-backed source of truth configured through `DATABASE_URL` |
+
+### Reviewer quick start
+
+1. Open the [deployed frontend](https://surya-outbox-labs-five.vercel.app/).
+2. Use Google OAuth when credentials are configured, or use the retained demo
+   login for assignment review.
+3. Use **Compose** to schedule one email or upload a CSV/TXT lead list.
+4. Open **Scheduled** and **Sent** to inspect delivery state.
+5. Open the **BullMQ Board** button in the dashboard, or use the direct
+   [BullMQ Board link](https://outboxlabs-odvu.onrender.com/admin/queues).
+6. When prompted by HTTP Basic Auth, use these assignment-only demo
+   credentials:
+
+   ```text
+   Username: admin
+   Password: admin_secret
+   ```
+
+   These credentials are intentionally simple for evaluation. They must be
+   changed before any real deployment.
+
+The deployed frontend is configured with `VITE_API_BASE_URL` pointing to the
+Render API, not to a relative `/api` path on Vercel. This prevents production
+authentication and scheduling requests from being sent to the frontend host.
+
+### Health and operational URLs
+
+```text
+Frontend:       https://surya-outbox-labs-five.vercel.app/
+Backend:        https://outboxlabs-odvu.onrender.com/
+API health:     https://outboxlabs-odvu.onrender.com/health
+Metrics:        https://outboxlabs-odvu.onrender.com/metrics
+BullMQ Board:   https://outboxlabs-odvu.onrender.com/admin/queues
+Google callback:https://outboxlabs-odvu.onrender.com/api/auth/google/callback
+Slack callback: https://outboxlabs-odvu.onrender.com/api/slack/callback
+```
+
+External credentials are intentionally not included in this repository. The
+deployed services receive them through Render/Vercel environment variables.
+
 ## Architecture
 
 The high-level design is also available in [`HLD.excalidraw`](./HLD.excalidraw).
@@ -73,6 +124,65 @@ Express API
 | Client state | TanStack Query, Axios |
 | Monitoring | Prometheus metrics, Bull Board |
 | Local infrastructure | Docker Compose |
+
+## What Was Implemented
+
+### Backend
+
+- Express.js REST API written in strict TypeScript with Zod validation.
+- Google OAuth plus HTTP-only JWT authentication, logout, protected routes,
+  and retained demo login for evaluation.
+- PostgreSQL/Prisma persistence for users, sender accounts, campaigns,
+  scheduled emails, delivery attempts, Slack integrations, and outbox events.
+- Transactional outbox workflow: the email row and publication event commit in
+  one transaction before BullMQ publication.
+- BullMQ delayed scheduling with deterministic job IDs and idempotency keys.
+- Continuous outbox dispatching and startup reconciliation without cron jobs or
+  cron libraries.
+- Separate email, indexing, notification, and dead-letter queues.
+- Configurable worker concurrency and minimum delay between sends.
+- Atomic Redis Lua hourly quota reservation per sender, with campaign-specific
+  limits and delayed rescheduling when a quota is exhausted.
+- Real Ethereal SMTP delivery with sender-specific credentials, SMTP message
+  IDs, preview URLs, retries, delivery attempts, and terminal failures.
+- Real Slack OAuth and Slack Web API notifications when a sender reaches its
+  hourly quota, with Redis-backed notification deduplication.
+- Elasticsearch indexing for scheduled, sent, and failed email records, with
+  PostgreSQL search fallback when Elasticsearch is unavailable.
+- Protected Bull Board monitoring for waiting, active, delayed, completed,
+  failed, and dead-letter jobs.
+- Health, metrics, structured error handling, restart recovery, and graceful
+  worker shutdown behavior.
+
+### Frontend
+
+- React + TypeScript + Vite + Tailwind CSS dashboard.
+- Google sign-in, demo login, authentication loading/error states, and logout.
+- Scheduled and sent email tabs with pagination, search, refresh, loading
+  states, empty states, and responsive layouts.
+- Compose flow with subject, body, sender selection, start time, delay, and
+  hourly limit.
+- CSV/TXT upload with common email-column detection, email validation,
+  duplicate removal, and valid/invalid/duplicate counts before submission.
+- Email detail view with delivery status, timestamps, sender information, SMTP
+  preview information, and failure details.
+- Slack connection/disconnection status.
+- BullMQ Board button and assignment-only credential display.
+
+### Infrastructure and verification
+
+- Docker Compose for PostgreSQL and Redis, with an opt-in Elasticsearch
+  search profile.
+- Upstash-compatible Redis configuration for hosted queues and distributed
+  rate limiting.
+- Elastic Cloud API-key authentication without exposing search credentials to
+  the frontend.
+- Real integration runner for PostgreSQL, Redis, BullMQ, and concurrent quota
+  reservations.
+- Batched load test for 1,000 scheduled emails and transactional outbox
+  creation.
+- Unit tests covering authentication, scheduling, idempotency, encryption,
+  rate limiting, and failure handling.
 
 ## Prerequisites
 
