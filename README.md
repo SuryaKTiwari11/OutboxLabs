@@ -62,6 +62,20 @@ Slack callback: https://outboxlabs-odvu.onrender.com/api/slack/callback
 External credentials are intentionally not included in this repository. The
 deployed services receive them through Render/Vercel environment variables.
 
+### Local agent setup and verification
+
+For an agent-ready local setup procedure, use
+[`LOCAL_AGENT_RUNBOOK.md`](./LOCAL_AGENT_RUNBOOK.md). It starts PostgreSQL
+and Redis with Docker, optionally starts Elasticsearch, verifies Ethereal
+through local DNS/TCP/STARTTLS, runs the backend build and tests, and checks
+the local health endpoints without exposing credentials.
+
+The Render Free SMTP restriction does not apply to a local machine or local
+Docker network. Render Free services block outbound ports `25`, `465`, and
+`587`; therefore Ethereal port `587` can work locally while timing out from
+the deployed Free worker. See [Render SMTP networking](#render-smtp-networking)
+for the production remediation options.
+
 ## Architecture
 
 The high-level design is also available in [`HLD.excalidraw`](./HLD.excalidraw).
@@ -434,6 +448,30 @@ delivery is not blocked.
 The SMTP transport defaults are `smtp.ethereal.email`, port `587`,
 `secure=false`, with 30,000 ms connection, greeting, and socket timeouts.
 The worker logs DNS, TCP, and Nodemailer verification results separately.
+
+#### Render SMTP networking
+
+Render Free services block outbound SMTP on ports `25`, `465`, and `587`.
+Ethereal SMTP on port `587` therefore cannot work from a Free Render worker;
+a TCP timeout here happens before SMTP greeting, TLS, or authentication. Changing
+credentials or increasing retries will not resolve this network restriction.
+Keep Ethereal on its supported SMTP port `587`; do not switch it to `465` or
+`2525` unless the provider explicitly supports that port.
+
+To deliver from Render, either upgrade the worker (and any service that sends
+mail) to a paid plan and retain Ethereal on port `587`, or replace SMTP delivery
+with an email provider's HTTPS API over port `443` (for example Resend,
+SendGrid, Mailgun, or Postmark). If moving to an HTTP provider, use a separate
+provider implementation and retain Ethereal for local/demo use. After changing
+the plan or provider, update Render environment variables, deploy, and send a
+new test message. Confirm the worker logs successful DNS/TCP/transport checks
+and provider acceptance, the BullMQ job completes, the database reaches `SENT`
+only after acceptance, and no duplicate message is created. Ethereal messages
+are previews and are never delivered to real inboxes.
+
+The Render blueprint currently provisions the worker on `plan: free`; choose a
+paid worker plan in Render to enable SMTP egress. The blueprint's Free setting
+does not make Ethereal port `587` reachable.
 
 ### Render encryption diagnostics
 
