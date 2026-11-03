@@ -50,20 +50,29 @@ export class EmailService {
       hourlyLimit: payload.hourlyLimit,
     });
 
-    // ── Index into Elasticsearch ───────────────────────────
-    await elasticsearchService.indexEmail({
-      id: email.id,
-      userId,
-      campaignId: payload.campaignId,
-      senderId: payload.senderId,
-      senderEmail: sender.fromEmail,
-      recipient: payload.recipientEmail,
-      subject: payload.subject,
-      body: payload.body,
-      status: "QUEUED",
-      scheduledAt,
-      createdAt: email.createdAt,
-    });
+    // Search indexing is intentionally best-effort. The database and outbox
+    // transaction above must not become a failed scheduling response when
+    // Elasticsearch is unavailable.
+    try {
+      await elasticsearchService.indexEmail({
+        id: email.id,
+        userId,
+        campaignId: payload.campaignId,
+        senderId: payload.senderId,
+        senderEmail: sender.fromEmail,
+        recipient: payload.recipientEmail,
+        subject: payload.subject,
+        body: payload.body,
+        status: "QUEUED",
+        scheduledAt,
+        createdAt: email.createdAt,
+      });
+    } catch (error) {
+      logger.warn("[EmailService] Elasticsearch indexing deferred", {
+        emailId: email.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     logger.info(`[EmailService] Email scheduled`, {
       emailId: email.id,

@@ -136,6 +136,36 @@ describe("EmailService", () => {
         })
       );
     });
+
+    it("returns the scheduled email when Elasticsearch indexing fails", async () => {
+      const futureDate = new Date(Date.now() + 60000);
+      (prisma.senderAccount.findFirst as jest.Mock).mockResolvedValue({
+        id: mockSenderId,
+        fromEmail: "sender@example.com",
+      });
+
+      const mockCreatedEmail = {
+        id: "email-es-unavailable",
+        idempotencyKey: "test-hash-es-unavailable",
+        recipient: "lead@example.com",
+        scheduledAt: futureDate,
+        createdAt: new Date(),
+      };
+      (outboxService.createEmailWithOutbox as jest.Mock).mockResolvedValue(mockCreatedEmail);
+      (elasticsearchService.indexEmail as jest.Mock).mockRejectedValue(
+        new Error("Elastic Cloud unavailable")
+      );
+
+      await expect(
+        emailService.scheduleSingle(mockUserId, {
+          recipientEmail: "lead@example.com",
+          subject: "Welcome",
+          body: "Test email",
+          scheduledAt: futureDate.toISOString(),
+          senderId: mockSenderId,
+        })
+      ).resolves.toBe(mockCreatedEmail);
+    });
   });
 
   describe("reconcileOnStartup", () => {
