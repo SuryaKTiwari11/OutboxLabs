@@ -14,9 +14,25 @@ import type {
   SlackStatus,
 } from "../types";
 
+const getApiBaseUrl = (): string => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (envUrl && envUrl !== "/api") return envUrl;
+
+  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+  if (backendUrl && !backendUrl.includes("localhost")) {
+    return `${backendUrl.replace(/\/+$/, "")}/api`;
+  }
+
+  if (typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")) {
+    return "https://outboxlabs-odvu.onrender.com/api";
+  }
+
+  return "/api";
+};
+
 // ── Axios instance ─────────────────────────────────────────────
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
+  baseURL: getApiBaseUrl(),
   withCredentials: true,
   headers: { "Content-Type": "application/json" },
 });
@@ -98,6 +114,12 @@ export const authApi = {
 
   googleLoginUrl: () => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    if (backendUrl && !backendUrl.includes("localhost")) {
+      return `${backendUrl.replace(/\/+$/, "")}/api/auth/google`;
+    }
+    if (typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")) {
+      return "https://outboxlabs-odvu.onrender.com/api/auth/google";
+    }
     return backendUrl ? `${backendUrl}/api/auth/google` : "/api/auth/google";
   },
 };
