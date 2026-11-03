@@ -33,4 +33,3 @@ router.post("/logout", authController.logout as never);
 router.get("/me", authMiddleware as never, authController.me as never);
 
 export { router as authRouter };
-

@@ -14,18 +14,24 @@ import type {
   SlackStatus,
 } from "../types";
 
-const getApiBaseUrl = (): string => {
-  const envUrl = import.meta.env.VITE_API_BASE_URL;
-  if (envUrl && envUrl !== "/api") return envUrl;
+const DEFAULT_PRODUCTION_API_BASE_URL = "https://outboxlabs-odvu.onrender.com/api";
 
-  const backendUrl = import.meta.env.VITE_BACKEND_URL;
-  if (backendUrl && !backendUrl.includes("localhost")) {
+const isAbsoluteHttpUrl = (value: string | undefined): value is string =>
+  Boolean(value && /^https?:\/\//i.test(value));
+
+export const getApiBaseUrl = (): string => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (isAbsoluteHttpUrl(envUrl)) return envUrl.replace(/\/+$/, "");
+
+  const backendUrl = import.meta.env.VITE_BACKEND_URL?.trim();
+  if (isAbsoluteHttpUrl(backendUrl) && !backendUrl.includes("localhost")) {
     return `${backendUrl.replace(/\/+$/, "")}/api`;
   }
 
-  if (typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")) {
-    return "https://outboxlabs-odvu.onrender.com/api";
-  }
+  // A relative /api URL only works when the frontend host proxies the API.
+  // Use the deployed backend directly so a stale/missing Vercel rewrite cannot
+  // turn authentication calls into static-site 404s.
+  if (import.meta.env.PROD) return DEFAULT_PRODUCTION_API_BASE_URL;
 
   return "/api";
 };
@@ -113,14 +119,7 @@ export const authApi = {
   },
 
   googleLoginUrl: () => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
-    if (backendUrl && !backendUrl.includes("localhost")) {
-      return `${backendUrl.replace(/\/+$/, "")}/api/auth/google`;
-    }
-    if (typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")) {
-      return "https://outboxlabs-odvu.onrender.com/api/auth/google";
-    }
-    return backendUrl ? `${backendUrl}/api/auth/google` : "/api/auth/google";
+    return `${getApiBaseUrl()}/auth/google`;
   },
 };
 
@@ -190,7 +189,7 @@ export const slackApi = {
       .get<ApiResponse<SlackStatus>>("/slack/status")
       .then((r) => r.data.data!),
 
-  connectUrl: () => "/api/slack/connect",
+  connectUrl: () => `${getApiBaseUrl()}/slack/connect`,
 
   disconnect: () =>
     apiClient.delete<ApiResponse>("/slack/disconnect").then((r) => r.data),

@@ -39,7 +39,6 @@ export const authController = {
   // POST /api/auth/dev-login — one-click login for quick testing
   async devLogin(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      // Find-or-create: key on email (not googleId) to avoid duplicate conflicts
       let user = await userRepository.findByEmail("demo@reachinbox.io");
       if (!user) {
         user = await userRepository.upsertFromGoogle({
@@ -51,7 +50,6 @@ export const authController = {
       }
 
       const token = generateJwt(user.id, user.email);
-
       res.cookie("auth_token", token, {
         httpOnly: true,
         secure: env.isProduction(),
@@ -59,7 +57,7 @@ export const authController = {
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
 
-      const response: ApiResponse = {
+      res.json({
         success: true,
         data: {
           token,
@@ -70,8 +68,7 @@ export const authController = {
             avatarUrl: user.avatarUrl,
           },
         },
-      };
-      res.json(response);
+      });
     } catch (err) {
       next(err);
     }
@@ -107,4 +104,3 @@ export const authController = {
     }
   },
 };
-

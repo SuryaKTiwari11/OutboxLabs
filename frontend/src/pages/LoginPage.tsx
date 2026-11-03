@@ -15,7 +15,6 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-
   const [email, setEmail] = useState("demo@reachinbox.io");
   const [password, setPassword] = useState("demo1234");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,12 +34,8 @@ export function LoginPage() {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) {
-      toast.error("Please enter your email ID");
-      return;
-    }
-    if (!password.trim()) {
-      toast.error("Please enter your password");
+    if (!email.trim() || !password.trim()) {
+      toast.error("Please enter your email ID and password");
       return;
     }
 
@@ -107,7 +102,6 @@ export function LoginPage() {
             </span>
           </button>
 
-          {/* Divider */}
           <div className="mt-[28px] mb-[40px] flex items-center justify-between w-[380px]">
             <div className="w-[90px] h-[1px]" style={{ backgroundColor: "#E5E7EB" }} />
             <span className="text-[12px] text-[#A4A4A4] tracking-[0.4px]">
@@ -116,9 +110,7 @@ export function LoginPage() {
             <div className="w-[90px] h-[1px]" style={{ backgroundColor: "#E5E7EB" }} />
           </div>
 
-          {/* Form */}
           <form onSubmit={handleLoginSubmit} className="flex flex-col">
-            {/* Test credentials hint */}
             <div className="mb-[16px] px-[14px] py-[10px] bg-[#F0FDF4] border border-[#BBF7D0] rounded-[8px] text-[12px] text-[#166534]">
               <span className="font-[600]">Test credentials pre-filled</span> — just click Login
               <br />
@@ -127,7 +119,6 @@ export function LoginPage() {
               <span className="font-mono text-[11px] text-[#15803D]">demo1234</span>
             </div>
             <div className="flex flex-col gap-[12px]">
-              {/* Email field: 380x56, bg #F4F7F5, radius 10px, no border, padding-left 20px */}
               <input
                 type="email"
                 placeholder="Email ID"
@@ -135,8 +126,6 @@ export function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-[380px] h-[56px] bg-[#F4F7F5] rounded-[10px] pl-[20px] pr-[16px] text-[14px] text-[#101828] placeholder-[#636970] outline-none focus:ring-1 focus:ring-[#00A63E] transition-all"
               />
-
-              {/* Password field */}
               <input
                 type="password"
                 placeholder="Password"
@@ -145,8 +134,6 @@ export function LoginPage() {
                 className="w-[380px] h-[56px] bg-[#F4F7F5] rounded-[10px] pl-[20px] pr-[16px] text-[14px] text-[#101828] placeholder-[#636970] outline-none focus:ring-1 focus:ring-[#00A63E] transition-all"
               />
             </div>
-
-            {/* Login button: 28px below password field, 380x48, bg #00A63E, white text "Login" 14-15px weight 500, radius 10px */}
             <button
               type="submit"
               disabled={isSubmitting}
@@ -155,6 +142,7 @@ export function LoginPage() {
               {isSubmitting ? "Logging in..." : "Login"}
             </button>
           </form>
+
         </div>
       </div>
     </div>
