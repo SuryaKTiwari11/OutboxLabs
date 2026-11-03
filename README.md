@@ -66,6 +66,14 @@ deployed services receive them through Render/Vercel environment variables.
 
 The high-level design is also available in [`HLD.excalidraw`](./HLD.excalidraw).
 
+### Visual system flow
+
+The following diagram is the conceptual system flow used for the assignment.
+It shows the scalable API/load-balancer shape from the HLD; the deployed
+equivalent is Vercel for the frontend and Render for the API/workers.
+
+![ReachInbox architecture flow](./flow.png)
+
 ```text
 Browser / React + Vite
         |
