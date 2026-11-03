@@ -6,7 +6,9 @@ services:
     plan: free
     region: oregon
     buildCommand: cd backend && npm install --include=dev && npx prisma generate && npm run build
-    startCommand: cd backend && npx prisma migrate deploy && npm run start
+    # The assignment deployment uses db push so the hosted database stays
+    # aligned even when Render is connected to an existing service.
+    startCommand: cd backend && npx prisma db push --accept-data-loss && npm run start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -37,7 +39,7 @@ services:
     plan: free
     region: oregon
     buildCommand: cd backend && npm install --include=dev && npx prisma generate && npm run build
-    startCommand: cd backend && npx prisma migrate deploy && npm run start:worker
+    startCommand: cd backend && npx prisma db push --accept-data-loss && npm run start:worker
     envVars:
       - key: NODE_ENV
         value: production
