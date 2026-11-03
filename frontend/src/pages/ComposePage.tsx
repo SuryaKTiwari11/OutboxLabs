@@ -58,21 +58,44 @@ export function ComposePage() {
   const [selectedSenderId, setSelectedSenderId] = useState("");
   const [isFromDropdownOpen, setIsFromDropdownOpen] = useState(false);
 
-  // Fetch real senders if available or synchronize user
+  // Fetch real sender accounts. The authenticated user's email is not a
+  // sender account unless it has an SMTP record in the backend.
   useEffect(() => {
-    if (user?.email) {
-      setSenders((prev) => [
-        { id: "user", fromEmail: user.email, displayName: user.name || user.email },
-        ...prev.filter((s) => s.fromEmail !== user.email),
-      ]);
-      setSelectedSenderId((current) => current || "user");
-    }
-    sendersApi.list().then((list) => {
-      if (list && list.length > 0) {
-        setSenders(list.map((s) => ({ id: s.id, fromEmail: s.fromEmail, displayName: s.displayName })));
-        setSelectedSenderId(list[0].id);
+    let cancelled = false;
+
+    sendersApi.list().then(async (list) => {
+      if (cancelled) return;
+
+      if (list.length > 0) {
+        const availableSenders = list.map((s) => ({
+          id: s.id,
+          fromEmail: s.fromEmail,
+          displayName: s.displayName,
+        }));
+        setSenders(availableSenders);
+        setSelectedSenderId(availableSenders[0].id);
+        return;
       }
-    }).catch(() => {});
+
+      const created = await sendersApi.createEthereal(user?.name || "Default Sender");
+      if (cancelled) return;
+      const newSender = {
+        id: created.id,
+        fromEmail: created.fromEmail,
+        displayName: created.displayName,
+      };
+      setSenders([newSender]);
+      setSelectedSenderId(newSender.id);
+      toast.success("A test sender was created for this account");
+    }).catch((error: unknown) => {
+      if (!cancelled) {
+        toast.error(error instanceof Error ? error.message : "Unable to load sender accounts");
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   const currentSender = senders.find((s) => s.id === selectedSenderId) ?? senders[0];
