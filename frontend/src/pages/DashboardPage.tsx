@@ -16,12 +16,17 @@ import {
   LogOut,
   LogIn,
   User as UserIcon,
+  ExternalLink,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
 import { useScheduledEmails, useSentEmails } from "../hooks/useEmails";
 
 type Tab = "scheduled" | "sent";
+
+const bullBoardUrl =
+  import.meta.env.VITE_BULL_BOARD_URL?.trim() ||
+  "https://outboxlabs-odvu.onrender.com/admin/queues";
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -213,6 +218,15 @@ export function DashboardPage() {
         >
           Compose
         </button>
+        <a
+          href={bullBoardUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full md:w-[236px] h-[34px] rounded-full border border-[#D0D5DD] bg-white text-[#344054] text-[13px] font-[500] hover:bg-[#F9FAFB] transition-colors flex items-center justify-center gap-2 mb-[20px]"
+        >
+          <ExternalLink className="w-[15px] h-[15px]" />
+          BullMQ Board
+        </a>
 
         {/* 4. Section label "CORE": 10px, uppercase, letter-spacing ~0.5px, #B6B6B6, indented 16px from block's left */}
         <div className="pl-[16px] text-[10px] uppercase font-[500] tracking-[0.5px] text-[#B6B6B6] mb-[8px]">
