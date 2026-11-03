@@ -363,7 +363,12 @@ export function ComposePage() {
       );
       navigate("/");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to schedule emails");
+      const message = error instanceof Error ? error.message : "Unable to schedule emails";
+      toast.error(
+        message === "Internal server error"
+          ? "The server could not schedule this email. Please try again."
+          : message
+      );
     } finally {
       setIsSubmitting(false);
     }

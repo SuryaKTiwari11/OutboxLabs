@@ -70,14 +70,16 @@ export default function App() {
 
       {/* Toast notifications */}
       <Toaster
-        position="top-right"
+        position="bottom-right"
+        containerStyle={{ bottom: 88, right: 24 }}
         toastOptions={{
-          duration: 4000,
+          duration: 5000,
           style: {
             borderRadius: "10px",
             fontSize: "14px",
             border: "1px solid #E5E7EB",
             boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+            maxWidth: "min(420px, calc(100vw - 32px))",
           },
         }}
       />
