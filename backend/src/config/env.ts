@@ -36,6 +36,16 @@ function optionalEnvUrl(key: string, fallback: string): string {
   return val.replace(/\/+$/, "");
 }
 
+function requireEncryptionKey(): string {
+  const value = requireEnv("ENCRYPTION_KEY");
+  if (!/^[0-9a-fA-F]{64}$/.test(value)) {
+    throw new Error(
+      '[ENV] "ENCRYPTION_KEY" must be exactly 64 hexadecimal characters (32 bytes).'
+    );
+  }
+  return value;
+}
+
 // ─────────────────────────────────────────────────────────────
 
 export const env = {
@@ -76,7 +86,7 @@ export const env = {
   // Security
   JWT_SECRET: requireEnv("JWT_SECRET"),
   JWT_EXPIRY: optionalEnv("JWT_EXPIRY", "7d"),
-  ENCRYPTION_KEY: requireEnv("ENCRYPTION_KEY"),
+  ENCRYPTION_KEY: requireEncryptionKey(),
 
   // Ethereal SMTP (optional — auto-created if not set)
   ETHEREAL_USER: process.env["ETHEREAL_USER"],

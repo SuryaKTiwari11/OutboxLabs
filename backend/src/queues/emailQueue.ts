@@ -75,7 +75,7 @@ emailQueueEvents.on("completed", ({ jobId }) => {
 });
 
 emailQueueEvents.on("failed", ({ jobId, failedReason }) => {
-  logger.error(`[Queue] Email job failed`, { jobId, reason: failedReason });
+  logger.error(`[Queue] Email job failed`, { jobId, failedReason });
 });
 
 emailQueueEvents.on("delayed", ({ jobId, delay }) => {

@@ -152,7 +152,14 @@ export class OutboxDispatcher {
         processedCount++;
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
-        logger.error(`[OutboxDispatcher] Failed to dispatch event ${event.id}:`, errorMsg);
+        logger.error(`[OutboxDispatcher] Failed to dispatch event ${event.id}`, {
+          eventId: event.id,
+          aggregateId: event.aggregateId,
+          eventType: event.eventType,
+          retryCount: event.retryCount + 1,
+          error: errorMsg,
+          stack: err instanceof Error ? err.stack : undefined,
+        });
 
         await prisma.outboxEvent.update({
           where: { id: event.id },
@@ -164,6 +171,7 @@ export class OutboxDispatcher {
         });
 
         outboxEventsCounter.inc({ eventType: event.eventType, status: "failed" });
+        await this.sleep(Math.min(30_000, 1000 * 2 ** event.retryCount));
       }
     }
 

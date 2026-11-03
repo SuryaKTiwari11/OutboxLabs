@@ -20,11 +20,19 @@ import { elasticsearchService } from "../integrations/elasticsearch";
 import { EmailJobData } from "../types";
 import { env } from "../config/env";
 import { logger } from "../utils/logger";
+import * as crypto from "crypto";
+
+function encryptionKeyFingerprint(): string {
+  return crypto.createHash("sha256").update(env.ENCRYPTION_KEY).digest("hex").slice(0, 12);
+}
 
 export async function startWorkers(): Promise<() => Promise<void>> {
   logger.info("=".repeat(60));
   logger.info("  ReachInbox — Starting Distributed Worker Services");
   logger.info("=".repeat(60));
+  logger.info("[Workers] Encryption key fingerprint", {
+    fingerprint: encryptionKeyFingerprint(),
+  });
 
   // 1. Connect to Database & Elasticsearch
   await connectDatabase();
@@ -58,7 +66,9 @@ export async function startWorkers(): Promise<() => Promise<void>> {
     logger.error(`[Worker:Email] Job failed ✗`, {
       jobId: job?.id,
       attempt: (job?.attemptsMade ?? 0) + 1,
+      maxAttempts: job?.opts.attempts,
       error: err.message,
+      stack: err.stack,
     });
   });
 

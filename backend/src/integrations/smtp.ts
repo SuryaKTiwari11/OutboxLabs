@@ -14,6 +14,8 @@
 // ─────────────────────────────────────────────────────────────
 
 import nodemailer, { Transporter } from "nodemailer";
+import { lookup } from "dns/promises";
+import net from "net";
 import { env } from "../config/env";
 import { logger } from "../utils/logger";
 import { decrypt } from "../utils/crypto";
@@ -28,6 +30,53 @@ interface SenderAccountLike {
   smtpUser: string;
   smtpPassEncrypted: string;
   smtpSecure: boolean;
+}
+
+export interface SmtpErrorDetails {
+  message: string;
+  name?: string;
+  code?: string;
+  responseCode?: number;
+  command?: string;
+  response?: string;
+  stack?: string;
+}
+
+export function getSmtpErrorDetails(error: unknown): SmtpErrorDetails {
+  if (!(error instanceof Error)) {
+    return { message: String(error) };
+  }
+
+  const smtpError = error as Error & {
+    code?: string;
+    responseCode?: number;
+    command?: string;
+    response?: string;
+  };
+
+  return {
+    message: error.message,
+    name: error.name,
+    code: smtpError.code,
+    responseCode: smtpError.responseCode,
+    command: smtpError.command,
+    response: smtpError.response,
+    stack: error.stack,
+  };
+}
+
+export function formatSmtpError(error: unknown): string {
+  const details = getSmtpErrorDetails(error);
+  const metadata = [
+    details.code && `code=${details.code}`,
+    details.responseCode && `responseCode=${details.responseCode}`,
+    details.command && `command=${details.command}`,
+    details.response && `response=${details.response}`,
+  ].filter(Boolean);
+
+  return metadata.length > 0
+    ? `${details.message} (${metadata.join(", ")})`
+    : details.message;
 }
 
 function smtpTransportOptions(
@@ -47,12 +96,114 @@ function smtpTransportOptions(
   };
 }
 
+function maskSmtpUser(user: string): string {
+  const at = user.indexOf("@");
+  if (at <= 1) return "***";
+  return `${user[0]}***${user.slice(at)}`;
+}
+
 // ── Default Ethereal credentials (auto-created if empty) ──────
 let _defaultTransporter: Transporter | null = null;
 
 export interface SmtpSendResult {
   messageId: string;
   previewUrl: string | null;
+}
+
+export interface SmtpConnectionDetails {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+}
+
+function logConnectionDetails(details: SmtpConnectionDetails): void {
+  logger.info("[SMTP] Transport configuration", {
+    host: details.host,
+    port: details.port,
+    secure: details.secure,
+    connectionTimeoutMs: env.SMTP_TIMEOUT_MS,
+    greetingTimeoutMs: env.SMTP_TIMEOUT_MS,
+    socketTimeoutMs: env.SMTP_TIMEOUT_MS,
+    user: maskSmtpUser(details.user),
+  });
+}
+
+async function checkTcpConnectivity(host: string, port: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const socket = net.createConnection({ host, port });
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      const error = new Error(`TCP connection timeout to ${host}:${port}`);
+      Object.assign(error, { code: "ETIMEDOUT", host, port });
+      reject(error);
+    }, env.SMTP_TIMEOUT_MS);
+
+    socket.once("connect", () => {
+      clearTimeout(timeout);
+      socket.end();
+      resolve();
+    });
+    socket.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+  });
+}
+
+export async function verifySmtpTransport(
+  transporter: Transporter,
+  details: SmtpConnectionDetails
+): Promise<void> {
+  logConnectionDetails(details);
+
+  try {
+    const addresses = await lookup(details.host, { all: true });
+    logger.info("[SMTP] DNS lookup succeeded", {
+      host: details.host,
+      addresses: addresses.map((address) => address.address),
+    });
+  } catch (error) {
+    logger.error("[SMTP] DNS lookup failed", {
+      host: details.host,
+      error: getSmtpErrorDetails(error),
+    });
+    throw error;
+  }
+
+  try {
+    await checkTcpConnectivity(details.host, details.port);
+    logger.info("[SMTP] TCP connection succeeded", {
+      host: details.host,
+      port: details.port,
+    });
+  } catch (error) {
+    logger.error("[SMTP] TCP connection failed", {
+      host: details.host,
+      port: details.port,
+      error: getSmtpErrorDetails(error),
+    });
+    throw error;
+  }
+
+  try {
+    await transporter.verify();
+    logger.info("[SMTP] Transport verification succeeded", {
+      host: details.host,
+      port: details.port,
+      secure: details.secure,
+      user: maskSmtpUser(details.user),
+    });
+  } catch (error) {
+    logger.error("[SMTP] Transport verification failed", {
+      host: details.host,
+      port: details.port,
+      secure: details.secure,
+      user: maskSmtpUser(details.user),
+      error: getSmtpErrorDetails(error),
+    });
+    throw error;
+  }
 }
 
 /**
@@ -67,7 +218,7 @@ export async function getDefaultTransporter(): Promise<Transporter> {
     _defaultTransporter = nodemailer.createTransport(smtpTransportOptions(
       env.ETHEREAL_HOST,
       env.ETHEREAL_PORT,
-      false,
+      env.ETHEREAL_PORT === 465,
       {
         user: env.ETHEREAL_USER,
         pass: env.ETHEREAL_PASS,
@@ -94,12 +245,39 @@ export async function getDefaultTransporter(): Promise<Transporter> {
   return _defaultTransporter;
 }
 
+export function getDefaultSmtpConnectionDetails(): SmtpConnectionDetails {
+  return {
+    host: env.ETHEREAL_HOST,
+    port: env.ETHEREAL_PORT,
+    secure: env.ETHEREAL_PORT === 465,
+    user: env.ETHEREAL_USER ?? "auto-created-account",
+  };
+}
+
 /**
  * Create a transporter for a specific sender account from the DB.
  * SMTP password is stored encrypted — decrypted here at runtime.
  */
 export function createTransporterForSender(sender: SenderAccountLike): Transporter {
-  const smtpPass = decrypt(sender.smtpPassEncrypted);
+  let smtpPass: string;
+  try {
+    smtpPass = decrypt(sender.smtpPassEncrypted);
+    logger.info("[SMTP] Sender password decrypted successfully", {
+      host: sender.smtpHost,
+      port: sender.smtpPort,
+      secure: sender.smtpSecure,
+      user: maskSmtpUser(sender.smtpUser),
+    });
+  } catch (error) {
+    logger.error("[SMTP] Sender password decryption failed before transporter creation", {
+      host: sender.smtpHost,
+      port: sender.smtpPort,
+      secure: sender.smtpSecure,
+      user: maskSmtpUser(sender.smtpUser),
+      error: getSmtpErrorDetails(error),
+    });
+    throw error;
+  }
 
   return nodemailer.createTransport(smtpTransportOptions(
     sender.smtpHost,
@@ -110,6 +288,15 @@ export function createTransporterForSender(sender: SenderAccountLike): Transport
       pass: smtpPass,
     }
   ));
+}
+
+export function getSenderSmtpConnectionDetails(sender: SenderAccountLike): SmtpConnectionDetails {
+  return {
+    host: sender.smtpHost,
+    port: sender.smtpPort,
+    secure: sender.smtpSecure,
+    user: sender.smtpUser,
+  };
 }
 
 /**
@@ -123,6 +310,7 @@ export async function sendEmail(
     to: string;
     subject: string;
     html: string;
+    messageId?: string;
   }
 ): Promise<SmtpSendResult> {
   const info = await transporter.sendMail({
@@ -130,6 +318,7 @@ export async function sendEmail(
     to: options.to,
     subject: options.subject,
     html: options.html,
+    messageId: options.messageId,
   });
 
   const previewUrl = nodemailer.getTestMessageUrl(info) || null;
@@ -137,6 +326,9 @@ export async function sendEmail(
   logger.info(`[SMTP] Email sent`, {
     messageId: info.messageId,
     to: options.to,
+    response: info.response,
+    accepted: info.accepted,
+    rejected: info.rejected,
     previewUrl,
   });
 

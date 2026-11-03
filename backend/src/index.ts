@@ -22,11 +22,19 @@ import { closeRedisClient } from "./config/redis";
 import { createApp } from "./app";
 import { logger } from "./utils/logger";
 import http from "http";
+import * as crypto from "crypto";
+
+function encryptionKeyFingerprint(): string {
+  return crypto.createHash("sha256").update(env.ENCRYPTION_KEY).digest("hex").slice(0, 12);
+}
 
 async function bootstrap(): Promise<void> {
   logger.info("=".repeat(60));
   logger.info("  ReachInbox Email Scheduler — Starting API Server");
   logger.info("=".repeat(60));
+  logger.info("[Bootstrap] Encryption key fingerprint", {
+    fingerprint: encryptionKeyFingerprint(),
+  });
 
   // 1. Connect to database
   await connectDatabase();
@@ -105,4 +113,3 @@ bootstrap().catch((err) => {
   logger.error("[Bootstrap] Fatal startup error", { error: err.message, stack: err.stack });
   process.exit(1);
 });
-

@@ -26,7 +26,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: ENCRYPTION_KEY
-        generateValue: true
+        sync: false # Preserve existing encrypted sender credentials.
       - key: SESSION_SECRET
         generateValue: true
       - key: FRONTEND_URL
@@ -47,10 +47,32 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALLBACK_URL
+        sync: false
       - key: JWT_SECRET
         sync: false
       - key: ENCRYPTION_KEY
+        sync: false # Must be exactly the same 64-character hex value as the API service.
+      - key: ETHEREAL_USER
         sync: false
+      - key: ETHEREAL_PASS
+        sync: false
+      - key: ETHEREAL_HOST
+        value: smtp.ethereal.email
+      - key: ETHEREAL_PORT
+        value: 587
+      - key: SMTP_TIMEOUT_MS
+        value: 30000
+      - key: ELASTICSEARCH_URL
+        sync: false
+      - key: ELASTICSEARCH_API_KEY
+        sync: false
+      - key: ELASTICSEARCH_INDEX_EMAILS
+        value: emails
 
   # ── Frontend Static Site ─────────────────────────────────────
   - type: web

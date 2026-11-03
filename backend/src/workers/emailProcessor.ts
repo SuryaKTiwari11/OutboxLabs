@@ -18,8 +18,13 @@ import { prisma } from "../config/database";
 import { rateLimitService } from "../services/rateLimitService";
 import {
   createTransporterForSender,
+  formatSmtpError,
+  getSmtpErrorDetails,
+  getDefaultSmtpConnectionDetails,
+  getSenderSmtpConnectionDetails,
   getDefaultTransporter,
   sendEmail,
+  verifySmtpTransport,
 } from "../integrations/smtp";
 import {
   emailQueue,
@@ -138,27 +143,39 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
   const attemptStart = Date.now();
   let smtpResult: { messageId: string; previewUrl: string | null } | null = null;
   let smtpError: string | null = null;
+  let smtpCause: unknown;
 
   try {
     const transporter = email.sender
       ? createTransporterForSender(email.sender)
       : await getDefaultTransporter();
+      const smtpDetails = email.sender
+        ? getSenderSmtpConnectionDetails(email.sender)
+        : getDefaultSmtpConnectionDetails();
 
-    // Execute with rolling failure Circuit Breaker
-    smtpResult = await smtpCircuitBreaker.execute(() =>
-      sendEmail(transporter, {
-        from: `"${email.sender.displayName}" <${email.sender.fromEmail}>`,
-        to: recipient,
-        subject,
-        html: body,
-      })
-    );
+      // Execute with rolling failure Circuit Breaker
+      smtpResult = await smtpCircuitBreaker.execute(() =>
+        verifySmtpTransport(transporter, smtpDetails).then(() =>
+          sendEmail(transporter, {
+            from: `"${email.sender.displayName}" <${email.sender.fromEmail}>`,
+            to: recipient,
+            subject,
+            html: body,
+            // A stable Message-ID is the strongest application-side duplicate
+            // protection available when SMTP acceptance and DB acknowledgement
+            // cannot be made atomic.
+            messageId: `<${idempotencyKey}@reachinbox.local>`,
+          })
+        )
+      );
   } catch (err) {
-    smtpError = err instanceof Error ? err.message : String(err);
+    smtpCause = err;
+    smtpError = formatSmtpError(err);
     logger.error(`[Worker] SMTP delivery attempt failed`, {
       scheduledEmailId,
       recipient,
       error: smtpError,
+      errorDetails: getSmtpErrorDetails(err),
       attempt: job.attemptsMade + 1,
     });
 
@@ -240,6 +257,10 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
     }
 
     // Re-throw so BullMQ initiates its exponential backoff retry
-    throw new Error(`SMTP Delivery Failed: ${smtpError}`);
+    const retryError = new Error(`SMTP delivery failed: ${smtpError}`, {
+      cause: smtpCause,
+    });
+    retryError.name = "SmtpDeliveryError";
+    throw retryError;
   }
 }

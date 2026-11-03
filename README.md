@@ -424,6 +424,27 @@ frontend variables or source control. Elastic Cloud free trials and quotas are
 provider-dependent; PostgreSQL fallback keeps the application functional if
 the service is unavailable.
 
+Elastic Serverless uses the same Elasticsearch API endpoint and API-key
+authentication. Create the `emails` index (with the mapping created by the
+application) or grant the API key index-management privileges for first-start
+index creation. If the key can only read/write an existing index, the API will
+log the initialization `403` and continue with PostgreSQL fallback; email
+delivery is not blocked.
+
+The SMTP transport defaults are `smtp.ethereal.email`, port `587`,
+`secure=false`, with 30,000 ms connection, greeting, and socket timeouts.
+The worker logs DNS, TCP, and Nodemailer verification results separately.
+
+### Render encryption diagnostics
+
+The API and worker use the same `env.ts` configuration and AES-GCM utility.
+If `RUN_WORKER=true` starts the worker in the API process, they necessarily
+share the process environment. The startup logs include a non-secret
+encryption-key fingerprint, and delivery logs report whether a sender
+password was decrypted successfully without exposing credentials. Do not
+regenerate `ENCRYPTION_KEY` unless logs prove decryption failure; doing so
+would invalidate existing encrypted sender passwords.
+
 ## Bull Board
 
 Open:
