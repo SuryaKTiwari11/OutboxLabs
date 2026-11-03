@@ -184,7 +184,7 @@ export function DashboardPage() {
                       type="button"
                       onClick={() => {
                         setIsUserMenuOpen(false);
-                        navigate("/login");
+                        navigate("/");
                       }}
                       className="w-full h-[36px] px-[10px] rounded-[6px] text-left text-[13px] text-[#00A63E] hover:bg-[#E5F6EC] font-[500] transition-colors flex items-center gap-[8px]"
                     >

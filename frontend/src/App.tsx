@@ -9,7 +9,6 @@ import { Toaster } from "react-hot-toast";
 
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./layouts/ProtectedRoute";
-import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ComposePage } from "./pages/ComposePage";
 import { EmailDetailPage } from "./pages/EmailDetailPage";
@@ -30,7 +29,7 @@ export default function App() {
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
+            <Route path="/login" element={<Navigate to="/" replace />} />
             <Route
               path="/"
               element={
