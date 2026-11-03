@@ -12,6 +12,7 @@ import { createRedisClient } from "../config/redis";
 import { EmailJobData, IndexingJobData, NotificationJobData } from "../types";
 import { logger } from "../utils/logger";
 import { queueDepthGauge } from "../config/metrics";
+import { buildBullJobId } from "../utils/jobId";
 
 export const EMAIL_QUEUE_NAME = "email-jobs";
 export const INDEXING_QUEUE_NAME = "indexing-jobs";
@@ -110,14 +111,14 @@ export async function enqueueEmailJob(
 // ── Helper: enqueue async indexing ─────────────────────────────
 export async function enqueueIndexingJob(data: IndexingJobData): Promise<void> {
   await indexingQueue.add("index-email", data, {
-    jobId: `idx:${data.scheduledEmailId}:${data.action}:${Date.now()}`,
+    jobId: buildBullJobId("idx", data.scheduledEmailId, data.action, Date.now()),
   });
 }
 
 // ── Helper: enqueue async notification ─────────────────────────
 export async function enqueueNotificationJob(data: NotificationJobData): Promise<void> {
   await notificationQueue.add("slack-alert", data, {
-    jobId: `slack:${data.userId}:${data.senderEmail}:${Date.now()}`,
+    jobId: buildBullJobId("slack", data.userId, data.senderEmail, Date.now()),
   });
 }
 
@@ -127,7 +128,7 @@ export async function enqueueDeadLetter(
   error: string
 ): Promise<void> {
   await dlqQueue.add("dead-letter", { ...data, error }, {
-    jobId: `dlq:${data.scheduledEmailId}:${Date.now()}`,
+    jobId: buildBullJobId("dlq", data.scheduledEmailId, Date.now()),
   });
   logger.warn(`[Queue] Moved job to Dead-Letter Queue`, { emailId: data.scheduledEmailId, error });
 }
