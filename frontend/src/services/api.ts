@@ -19,6 +19,17 @@ const DEFAULT_PRODUCTION_API_BASE_URL = "https://outboxlabs-odvu.onrender.com/ap
 const isAbsoluteHttpUrl = (value: string | undefined): value is string =>
   Boolean(value && /^https?:\/\//i.test(value));
 
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+    public readonly endpoint?: string,
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
 export const getApiBaseUrl = (): string => {
   const envUrl = import.meta.env.VITE_API_BASE_URL?.trim();
   if (isAbsoluteHttpUrl(envUrl)) return envUrl.replace(/\/+$/, "");
@@ -56,6 +67,8 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    const status = error.response?.status as number | undefined;
+    const endpoint = error.config?.url as string | undefined;
     let message =
       error.response?.data?.error ??
       error.response?.data?.message ??
@@ -71,7 +84,25 @@ apiClient.interceptors.response.use(
       }
     }
 
-    return Promise.reject(new Error(message));
+    const operation = endpoint?.includes("bulk-schedule")
+      ? "Bulk scheduling"
+      : endpoint?.includes("/emails/schedule")
+        ? "Email scheduling"
+        : "Request";
+    const statusText = status ? ` (HTTP ${status})` : "";
+    const endpointText = endpoint ? ` at ${endpoint}` : "";
+    const guidance =
+      status && status >= 500
+        ? " The server did not confirm the operation; check Scheduled before retrying to avoid duplicates."
+        : "";
+
+    return Promise.reject(
+      new ApiRequestError(
+        `${operation} failed${statusText}${endpointText}: ${message}.${guidance}`,
+        status,
+        endpoint,
+      )
+    );
   }
 );
 
