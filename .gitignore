@@ -6,11 +6,12 @@
 node_modules/
 .pnpm-store/
 
-# ── AI Agent tooling (local only — never commit) ──────────────
+# ── AI Agent tooling & local notes (never commit) ──────────────
 .agents/
 skills-lock.json
 claude.md
 context.md
+INTERVIEW_GUIDE.md
 
 # ── Build outputs ─────────────────────────────────────────────
 dist/
@@ -55,3 +56,4 @@ coverage/
 # ── Temp ──────────────────────────────────────────────────────
 tmp/
 .tmp/
+.neon

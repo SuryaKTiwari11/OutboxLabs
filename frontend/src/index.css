@@ -1,47 +1,50 @@
-/* ──────────────────────────────────────────────────────────────
-   index.css — Global styles for ReachInbox Dashboard
-   Tailwind base + custom design tokens
-────────────────────────────────────────────────────────────── */
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --color-brand:       #6366f1; /* indigo-500 */
-    --color-brand-dark:  #4f46e5; /* indigo-600 */
-    --color-surface:     #ffffff;
-    --color-bg:          #f8fafc; /* slate-50 */
-    --color-border:      #e2e8f0; /* slate-200 */
-    --color-text:        #0f172a; /* slate-900 */
-    --color-text-muted:  #64748b; /* slate-500 */
-    --radius:            0.5rem;
+    --text-strong: #101828;
+    --text-body: #1E2939;
+    --text-muted: #4A5565;
+    --text-subtle: #6A7282;
+    --text-faint: #99A1AF;
+    --green: #00A63E;
+    --green-tint: #E5F6EC;
+    --green-chip: #E6F7ED;
+    --avatar-green: #00C950;
+    --fill-soft: #F4F7F5;
+    --fill-chip: #F5F5F5;
+    --fill-editor: #FAFAFA;
+    --fill-card: #F9FAFB;
+    --fill-badge: #F3F4F6;
+    --line: #E5E7EB;
+    --line-row: #F8F9FA;
+    --card-border: #F1F2F4;
+    --orange-bg: #FFEDD4;
+    --orange-text: #CA3500;
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
-  }
-
-  * {
-    @apply border-slate-200;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #FFFFFF;
+    color: #101828;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+    padding: 0;
   }
 }
 
-@layer components {
-  /* Status badge variants */
-  .badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
-  }
-  .badge-pending   { @apply badge bg-yellow-100 text-yellow-800; }
-  .badge-queued    { @apply badge bg-blue-100   text-blue-800;   }
-  .badge-sent      { @apply badge bg-green-100  text-green-800;  }
-  .badge-failed    { @apply badge bg-red-100    text-red-800;    }
-  .badge-processing{ @apply badge bg-purple-100 text-purple-800; }
-
-  /* Table styles */
-  .table-header { @apply bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider; }
-  .table-cell   { @apply px-4 py-3 text-sm text-slate-700; }
-  .table-row    { @apply border-b border-slate-100 hover:bg-slate-50 transition-colors; }
+/* Custom scrollbars if needed */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E5E7EB;
+  border-radius: 9999px;
+}

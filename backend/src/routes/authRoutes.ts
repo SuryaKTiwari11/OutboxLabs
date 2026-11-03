@@ -23,6 +23,9 @@ router.get(
   authController.googleCallback as never
 );
 
+// POST /api/auth/dev-login — quick test login without Google OAuth setup
+router.post("/dev-login", authController.devLogin as never);
+
 // POST /api/auth/logout
 router.post("/logout", authController.logout as never);
 

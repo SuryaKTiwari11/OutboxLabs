@@ -189,3 +189,32 @@ model SlackIntegration {
   @@map("slack_integrations")
 }
 
+// ── OutboxEvent ───────────────────────────────────────────────
+// Transactional Outbox Pattern: guarantees atomic persistence & dispatch.
+// Every scheduled email creation creates an outbox event
+// within the same PostgreSQL ACID transaction.
+model OutboxEvent {
+  id            String       @id @default(cuid())
+  aggregateType String       // "EMAIL" | "CAMPAIGN"
+  aggregateId   String       // scheduledEmailId
+  eventType     String       // "EMAIL_SCHEDULED" | "STATUS_CHANGED"
+  payload       String       @db.Text // Serialized JSON payload
+  status        OutboxStatus @default(PENDING)
+  retryCount    Int          @default(0)
+  lastError     String?      @db.Text
+  createdAt     DateTime     @default(now())
+  publishedAt   DateTime?
+
+  @@index([status, createdAt])
+  @@index([aggregateId])
+  @@map("outbox_events")
+}
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+

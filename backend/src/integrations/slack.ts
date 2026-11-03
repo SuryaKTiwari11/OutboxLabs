@@ -18,63 +18,100 @@ import { decrypt } from "../utils/crypto";
 import { logger } from "../utils/logger";
 import { SlackNotificationPayload } from "../types";
 import { prisma } from "../config/database";
+import { env } from "../config/env";
 
 const SLACK_API_URL = "https://slack.com/api/chat.postMessage";
 
 export class SlackService {
   /**
-   * Send a rate-limit notification to the user's Slack.
-   * Silently skips if:
-   * - Slack is not connected for this user
-   * - A notification was already sent in this hour window
+   * Send a rate-limit notification to the user's Slack or workspace channel.
+   * Silently skips if neither user integration nor bot token is configured,
+   * or if a notification was already sent in this hour window.
    */
   async notifyRateLimitHit(payload: SlackNotificationPayload): Promise<void> {
     const { userId, senderEmail, limitReached, nextWindowAt } = payload;
 
-    // 1. Check if Slack is connected for this user
-    const integration = await prisma.slackIntegration.findUnique({
-      where: { userId },
-      select: { isActive: true, accessTokenEncrypted: true },
-    });
+    // 1. Resolve Slack token: User OAuth token OR Workspace Bot token
+    let token: string | null = null;
+    let channel: string = env.SLACK_DEFAULT_CHANNEL || "general";
 
-    if (!integration || !integration.isActive) {
-      logger.debug(`[Slack] No active Slack integration for user ${userId}`);
+    if (userId) {
+      const integration = await prisma.slackIntegration.findUnique({
+        where: { userId },
+        select: { isActive: true, accessTokenEncrypted: true },
+      });
+      if (integration && integration.isActive) {
+        token = decrypt(integration.accessTokenEncrypted);
+      }
+    }
+
+    // Fall back to workspace Bot token if no user OAuth integration
+    if (!token && env.SLACK_BOT_TOKEN) {
+      token = env.SLACK_BOT_TOKEN;
+    }
+
+    if (!token) {
+      logger.debug(`[Slack] No active Slack integration or Bot token found`);
       return;
     }
 
-    // 2. Check deduplication (don't spam the same notification)
+    // 2. Check deduplication (don't spam the same notification within 1 hour)
     const hourWindow = Math.floor(Date.now() / 3_600_000);
-    const dedupKey = `slack-notif:${userId}:${senderEmail}:${hourWindow}`;
+    const dedupKey = `slack-notif:${userId || "system"}:${senderEmail}:${hourWindow}`;
     const redis = getRedisClient();
 
-    const alreadySent = await redis.get(dedupKey);
-    if (alreadySent) {
-      logger.debug(`[Slack] Rate-limit notification already sent this hour`, {
-        userId,
-        senderEmail,
-      });
-      return;
+    try {
+      const alreadySent = await redis.get(dedupKey);
+      if (alreadySent) {
+        logger.debug(`[Slack] Rate-limit notification already sent this hour`, {
+          userId,
+          senderEmail,
+        });
+        return;
+      }
+    } catch {
+      // Redis down should not block notification attempt
     }
 
-    // 3. Decrypt token and send the Slack message
+    // 3. Post notification
     try {
-      const accessToken = decrypt(integration.accessTokenEncrypted);
       const message = this.buildRateLimitMessage(senderEmail, limitReached, nextWindowAt);
+      await this.postMessage(token, message, channel);
 
-      await this.postMessage(accessToken, message);
+      // Mark as sent in Redis
+      try {
+        await redis.setex(dedupKey, 65 * 60, "1");
+      } catch {
+        // ignore redis error
+      }
 
-      // Mark as sent for this hour (TTL = 65 min for safety)
-      await redis.setex(dedupKey, 65 * 60, "1");
-
-      logger.info(`[Slack] Rate-limit notification sent`, { userId, senderEmail });
+      logger.info(`[Slack] Rate-limit notification sent`, { userId, senderEmail, channel });
     } catch (err) {
       // Never let Slack errors break the email pipeline
       logger.error(`[Slack] Failed to send notification`, { error: err, userId });
     }
   }
 
-  private async postMessage(token: string, text: string): Promise<void> {
-    // Using native fetch (Node 18+)
+  /**
+   * Send a test ping to verify Slack bot configuration.
+   */
+  async sendTestMessage(channel: string = env.SLACK_DEFAULT_CHANNEL || "general"): Promise<{ ok: boolean; error?: string }> {
+    const token = env.SLACK_BOT_TOKEN;
+    if (!token) {
+      return { ok: false, error: "SLACK_BOT_TOKEN is not configured" };
+    }
+
+    const text = `🚀 *ReachInbox Alert System*: Slack integration is live and connected! Rate-limit alerts and email delivery telemetry will be reported here.`;
+    try {
+      await this.postMessage(token, text, channel);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err.message || String(err) };
+    }
+  }
+
+  private async postMessage(token: string, text: string, channel: string = "general"): Promise<void> {
+    const channelFormatted = channel.startsWith("#") || channel.startsWith("C") ? channel : `#${channel}`;
     const response = await fetch(SLACK_API_URL, {
       method: "POST",
       headers: {
@@ -82,7 +119,7 @@ export class SlackService {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        channel: "#general",   // or stored channel per user
+        channel: channelFormatted,
         text,
         username: "ReachInbox Bot",
         icon_emoji: ":email:",

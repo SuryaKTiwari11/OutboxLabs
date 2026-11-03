@@ -2,67 +2,65 @@
 //  workers/emailProcessor.ts
 //  BullMQ job processor — handles one email send.
 //
-//  Processing flow per job:
-//  1. Idempotency check — skip if already SENT
-//  2. Mark email as PROCESSING in DB
-//  3. Rate limit check via Redis Lua
-//     → If exceeded: reschedule to next hour, return
-//  4. Apply minimum delay (MIN_EMAIL_DELAY_MS)
-//  5. Send via SMTP (Nodemailer + Ethereal)
-//  6. Update DB to SENT + save messageId + previewUrl
-//  7. Update Elasticsearch index
-//  8. Record delivery attempt in DB
-//
-//  On SMTP failure:
-//  - BullMQ retries with exponential backoff (configured in queue)
-//  - DB status set to FAILED after exhausted retries
-//  - Delivery attempt recorded with error
-//  - Rate limit slot released (don't waste quota on failed sends)
+//  Scalability & Reliability Features:
+//  1. Lightweight payload: Fetches full email body from DB at execution time.
+//  2. Idempotency check: Skips if already SENT or CANCELLED.
+//  3. Rate limiting: Redis Lua atomic slot reservation. Reschedules if exhausted.
+//  4. SMTP Circuit Breaker: Fast-fails if downstream SMTP is tripping.
+//  5. Asynchronous Decoupling: Offloads Slack alerts and ES indexing to dedicated queues.
+//  6. Observability: Records Prometheus latency, counters, and delivery attempts.
+//  7. Dead-Letter Queue (DLQ): Enqueues terminal failures after max retries.
 // ─────────────────────────────────────────────────────────────
 
 import { Job } from "bullmq";
-import { EmailJobData, EmailStatus } from "../types";
+import { EmailJobData } from "../types";
 import { prisma } from "../config/database";
 import { rateLimitService } from "../services/rateLimitService";
-import { slackService } from "../integrations/slack";
-import { elasticsearchService } from "../integrations/elasticsearch";
 import {
   createTransporterForSender,
   getDefaultTransporter,
   sendEmail,
 } from "../integrations/smtp";
-import { emailQueue } from "../queues/emailQueue";
+import {
+  emailQueue,
+  enqueueIndexingJob,
+  enqueueNotificationJob,
+  enqueueDeadLetter,
+} from "../queues/emailQueue";
+import { smtpCircuitBreaker } from "../utils/circuitBreaker";
+import {
+  emailsProcessedCounter,
+  emailDeliveryLatencyHistogram,
+  rateLimitHitsCounter,
+} from "../config/metrics";
 import { env } from "../config/env";
 import { logger } from "../utils/logger";
 
-/**
- * Main job processor function.
- * Called by BullMQ worker for each email job.
- */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
-  const { scheduledEmailId, userId, senderId, recipient, subject, body, idempotencyKey } =
-    job.data;
+  const { scheduledEmailId, idempotencyKey } = job.data;
 
   logger.info(`[Worker] Processing job`, {
     jobId: job.id,
+    scheduledEmailId,
     attempt: job.attemptsMade + 1,
-    recipient,
   });
 
-  // ── Step 1: Idempotency check ──────────────────────────────
-  // If this email was already sent (e.g., worker crashed after SMTP
-  // but before DB update, then BullMQ retried), skip it.
-  const existing = await prisma.scheduledEmail.findUnique({
+  // ── Step 1: Idempotency & Fresh State Fetch ─────────────────
+  const email = await prisma.scheduledEmail.findUnique({
     where: { id: scheduledEmailId },
     include: { sender: true },
   });
 
-  if (!existing) {
+  if (!email) {
     logger.warn(`[Worker] Scheduled email not found in DB, skipping`, { scheduledEmailId });
-    return; // Job completes cleanly (no retry)
+    return; // Complete cleanly
   }
 
-  if (existing.status === "SENT") {
+  if (email.status === "SENT") {
     logger.info(`[Worker] Email already sent, skipping (idempotent)`, {
       scheduledEmailId,
       idempotencyKey,
@@ -70,12 +68,14 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
     return;
   }
 
-  if (existing.status === "CANCELLED") {
+  if (email.status === "CANCELLED") {
     logger.info(`[Worker] Email was cancelled, skipping`, { scheduledEmailId });
     return;
   }
 
-  // ── Step 2: Mark as PROCESSING ─────────────────────────────
+  const { senderId, userId, recipient, subject, body } = email;
+
+  // ── Step 2: Mark as PROCESSING in DB ────────────────────────
   await prisma.scheduledEmail.update({
     where: { id: scheduledEmailId },
     data: {
@@ -84,90 +84,92 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
     },
   });
 
-  // ── Step 3: Rate limit check ───────────────────────────────
+  // ── Step 3: Atomic Distributed Rate Limit Check ─────────────
   const rateResult = await rateLimitService.tryReserveSlot(senderId);
 
   if (!rateResult.allowed) {
-    // Reschedule to next hour window using BullMQ delay
-    const delayMs = rateResult.nextWindowMs! + 1000; // +1s buffer
+    rateLimitHitsCounter.inc({ senderId });
+
+    // Calculate rollover to next hour window
+    const delayMs = (rateResult.nextWindowMs ?? 3600000) + 1000; // +1s buffer
     const nextWindowAt = new Date(Date.now() + delayMs);
 
-    logger.warn(`[Worker] Rate limit reached, rescheduling`, {
-      senderId,
+    logger.warn(`[Worker] Rate limit reached for sender ${senderId}, rolling over to next window`, {
       nextWindowAt: nextWindowAt.toISOString(),
     });
 
-    // Revert status to QUEUED (will be re-processed in next window)
+    // Revert status to QUEUED in DB
     await prisma.scheduledEmail.update({
       where: { id: scheduledEmailId },
       data: {
         status: "QUEUED",
         scheduledAt: nextWindowAt,
-        attemptCount: { decrement: 1 }, // don't count this as an attempt
+        attemptCount: { decrement: 1 }, // Rollover does not count as failed attempt
       },
     });
 
-    // Re-enqueue as a delayed job (preserves ordering as much as possible)
+    // Reschedule in BullMQ with remaining delay
     await emailQueue.add("send-email", job.data, {
-      jobId: `${idempotencyKey}-${nextWindowAt.getTime()}`, // new unique ID
+      jobId: `${idempotencyKey}-${nextWindowAt.getTime()}`,
       delay: delayMs,
     });
 
-    // Notify via Slack (deduplicated per hour)
-    await slackService.notifyRateLimitHit({
+    // Asynchronously notify via Slack (offloaded to notificationQueue)
+    await enqueueNotificationJob({
       userId,
-      senderEmail: existing.sender.fromEmail,
+      senderEmail: email.sender.fromEmail,
       limitReached: rateResult.limit,
-      nextWindowAt,
+      nextWindowAt: nextWindowAt.toISOString(),
     });
 
-    return; // Current job completes; email will be picked up in new job
+    emailsProcessedCounter.inc({ senderId, status: "rescheduled" });
+    return;
   }
 
-  // ── Step 4: Minimum delay between sends ───────────────────
-  // This mimics provider throttling. We use a simple sleep here.
-  // Alternative: BullMQ limiter (but that requires Enterprise plan for per-queue limits).
+  // ── Step 4: Minimum Delay Spacing ───────────────────────────
   if (env.MIN_EMAIL_DELAY_MS > 0) {
     await sleep(env.MIN_EMAIL_DELAY_MS);
   }
 
-  // ── Step 5: Send via SMTP ──────────────────────────────────
+  // ── Step 5: Send via SMTP with Circuit Breaker ───────────────
   const attemptStart = Date.now();
   let smtpResult: { messageId: string; previewUrl: string | null } | null = null;
   let smtpError: string | null = null;
 
   try {
-    // Use sender-specific transporter or default Ethereal
-    const transporter = existing.sender
-      ? createTransporterForSender(existing.sender)
+    const transporter = email.sender
+      ? createTransporterForSender(email.sender)
       : await getDefaultTransporter();
 
-    smtpResult = await sendEmail(transporter, {
-      from: `"${existing.sender.displayName}" <${existing.sender.fromEmail}>`,
-      to: recipient,
-      subject,
-      html: body,
-    });
+    // Execute with rolling failure Circuit Breaker
+    smtpResult = await smtpCircuitBreaker.execute(() =>
+      sendEmail(transporter, {
+        from: `"${email.sender.displayName}" <${email.sender.fromEmail}>`,
+        to: recipient,
+        subject,
+        html: body,
+      })
+    );
   } catch (err) {
     smtpError = err instanceof Error ? err.message : String(err);
-    logger.error(`[Worker] SMTP delivery failed`, {
+    logger.error(`[Worker] SMTP delivery attempt failed`, {
       scheduledEmailId,
       recipient,
       error: smtpError,
       attempt: job.attemptsMade + 1,
     });
 
-    // Release the rate limit slot — don't waste quota on failed sends
+    // Release rate limit quota since send did not succeed
     await rateLimitService.releaseSlot(senderId);
   }
 
-  // ── Step 6: Update DB ──────────────────────────────────────
   const attemptDuration = Date.now() - attemptStart;
   const isLastAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 5);
 
+  // ── Step 6: Update Database & Metrics ───────────────────────
   if (smtpResult) {
-    // Success path
     const sentAt = new Date();
+
     await prisma.scheduledEmail.update({
       where: { id: scheduledEmailId },
       data: {
@@ -179,22 +181,14 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       },
     });
 
-    // Update campaign counters
-    if (existing.campaignId) {
-      await prisma.emailCampaign.update({
-        where: { id: existing.campaignId },
-        data: { sentCount: { increment: 1 } },
-      });
-    }
-
-    // ── Step 7: Update Elasticsearch ────────────────────────
-    await elasticsearchService.updateEmailStatus(
+    // Asynchronously index in Elasticsearch
+    await enqueueIndexingJob({
       scheduledEmailId,
-      "SENT",
-      sentAt
-    );
+      action: "UPDATE_STATUS",
+      status: "SENT",
+    });
 
-    // ── Step 8: Record delivery attempt ─────────────────────
+    // Record delivery attempt audit record
     await prisma.emailDeliveryAttempt.create({
       data: {
         scheduledEmailId,
@@ -204,27 +198,27 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
         duration: attemptDuration,
       },
     });
+
+    emailsProcessedCounter.inc({ senderId, status: "sent" });
+    emailDeliveryLatencyHistogram.observe({ senderId }, attemptDuration / 1000);
+
+    logger.info(`[Worker] Email sent successfully`, {
+      scheduledEmailId,
+      recipient,
+      messageId: smtpResult.messageId,
+      durationMs: attemptDuration,
+    });
   } else {
     // Failure path
-    const newStatus = isLastAttempt ? "FAILED" : "QUEUED";
+    const finalStatus = isLastAttempt ? "FAILED" : "QUEUED";
 
     await prisma.scheduledEmail.update({
       where: { id: scheduledEmailId },
       data: {
-        status: newStatus,
+        status: finalStatus,
         lastError: smtpError,
       },
     });
-
-    if (isLastAttempt) {
-      await elasticsearchService.updateEmailStatus(scheduledEmailId, "FAILED");
-      if (existing.campaignId) {
-        await prisma.emailCampaign.update({
-          where: { id: existing.campaignId },
-          data: { failedCount: { increment: 1 } },
-        });
-      }
-    }
 
     await prisma.emailDeliveryAttempt.create({
       data: {
@@ -236,13 +230,13 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
       },
     });
 
-    // Re-throw so BullMQ knows this attempt failed and applies backoff
-    throw new Error(smtpError ?? "SMTP delivery failed");
+    if (isLastAttempt) {
+      emailsProcessedCounter.inc({ senderId, status: "failed" });
+      // Offload to Dead Letter Queue
+      await enqueueDeadLetter(job.data, smtpError ?? "Unknown error");
+    }
+
+    // Re-throw so BullMQ initiates its exponential backoff retry
+    throw new Error(`SMTP Delivery Failed: ${smtpError}`);
   }
 }
-
-// ── Utility ───────────────────────────────────────────────────
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-

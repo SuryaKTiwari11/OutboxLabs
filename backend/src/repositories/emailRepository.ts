@@ -120,6 +120,49 @@ export class EmailRepository {
       data: { bullJobId, status: "QUEUED" },
     });
   }
+
+  /**
+   * Search emails in PostgreSQL with case-insensitive ILIKE fallback
+   * when Elasticsearch is unavailable or disabled.
+   */
+  async searchByUser(userId: string, query: string, page = 1, limit = 20) {
+    const where = {
+      userId,
+      OR: [
+        { recipient: { contains: query, mode: "insensitive" as const } },
+        { subject: { contains: query, mode: "insensitive" as const } },
+        { body: { contains: query, mode: "insensitive" as const } },
+      ],
+    };
+
+    const [emails, total] = await prisma.$transaction([
+      prisma.scheduledEmail.findMany({
+        where,
+        include: { sender: true, campaign: true },
+        orderBy: { scheduledAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.scheduledEmail.count({ where }),
+    ]);
+
+    return {
+      results: emails.map((e) => ({
+        id: e.id,
+        userId: e.userId,
+        campaignId: e.campaignId,
+        senderId: e.senderId,
+        recipient: e.recipient,
+        subject: e.subject,
+        body: e.body,
+        status: e.status,
+        scheduledAt: e.scheduledAt.toISOString(),
+        sentAt: e.sentAt ? e.sentAt.toISOString() : null,
+        createdAt: e.createdAt.toISOString(),
+      })),
+      total,
+    };
+  }
 }
 
 export const emailRepository = new EmailRepository();

@@ -10,6 +10,7 @@ import { encrypt } from "../utils/crypto";
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
 import { logger } from "../utils/logger";
+import { SlackService } from "../integrations/slack";
 
 const SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize";
 const SLACK_TOKEN_URL     = "https://slack.com/api/oauth.v2.access";
@@ -139,6 +140,22 @@ export const slackController = {
         },
       };
       res.json(response);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // POST /api/slack/test
+  async sendTest(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const channel = (req.body?.channel as string) || env.SLACK_DEFAULT_CHANNEL || "general";
+      const slackService = new SlackService();
+      const result = await slackService.sendTestMessage(channel);
+      if (!result.ok) {
+        res.status(400).json({ success: false, error: result.error });
+        return;
+      }
+      res.json({ success: true, message: `Test notification sent to #${channel}` });
     } catch (err) {
       next(err);
     }

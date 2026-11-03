@@ -49,6 +49,10 @@ export class ElasticsearchService {
     this.client = new Client({ node: env.ELASTICSEARCH_URL });
   }
 
+  isReady(): boolean {
+    return this.ready;
+  }
+
   /** Initialize: create index if it doesn't exist. */
   async initialize(): Promise<void> {
     try {

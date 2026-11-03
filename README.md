@@ -47,7 +47,9 @@
 | Search      | Elasticsearch 8         |
 | SMTP        | Nodemailer + Ethereal   |
 | Auth        | Passport.js + Google OAuth + JWT |
-| Notifications | Slack Web API         |
+| Notifications | Slack Web API (Bot Token + OAuth) |
+| Metrics     | Prometheus (`/metrics`) |
+| Observability | Grafana + Bull Board Dashboard |
 | Frontend    | React + Vite + TypeScript + Tailwind CSS |
 | Data Fetching | TanStack Query       |
 | Forms       | React Hook Form + Zod   |
@@ -260,14 +262,56 @@ pnpm db:studio
 ## BullMQ Dashboard (Bull Board)
 
 URL: `http://localhost:4000/admin/queues`  
-Auth: HTTP Basic — credentials from `BULL_BOARD_USERNAME` / `BULL_BOARD_PASSWORD` in `.env`
+Auth: HTTP Basic — credentials from `BULL_BOARD_USERNAME` / `BULL_BOARD_PASSWORD` in `.env` (default: `admin` / `admin_secret`)
 
 Shows:
 - **Waiting** — jobs pending processing
 - **Active** — jobs being processed right now
-- **Delayed** — jobs scheduled for the future
-- **Completed** — successfully sent emails
+- **Delayed** — jobs scheduled for the future (purple bar)
+- **Completed** — successfully sent emails (green bar)
 - **Failed** — emails that exhausted retries
+
+---
+
+## Prometheus & Grafana Telemetry Dashboard
+
+The application exposes real-time Prometheus telemetry at `http://localhost:4000/metrics` and provisions an out-of-the-box Grafana dashboard.
+
+### Accessing the Dashboards
+1. **Start Monitoring Containers**:
+   ```bash
+   docker-compose up -d prometheus grafana
+   ```
+2. **Prometheus Target**: `http://localhost:9090` (Scrapes `/metrics` every 5 seconds)
+3. **Grafana URL**: `http://localhost:3000`
+   - **Username**: `admin`
+   - **Password**: `admin`
+   - **Pre-configured Dashboard**: **"ReachInbox Scheduler Telemetry"**
+
+### Monitored Metrics
+- **Total Emails Scheduled** (`reachinbox_emails_scheduled_total`)
+- **Total Emails Processed / Sent** (`reachinbox_emails_processed_total{status="sent"}`)
+- **Delivery Failure Rate** (`reachinbox_emails_processed_total{status="failed"}`)
+- **Hourly Rate Limit Rollover Spikes** (`reachinbox_rate_limit_hits_total`)
+- **Email Delivery Throughput** (`rate(reachinbox_emails_processed_total[1m])`)
+- **SMTP Delivery Latency Histogram** (p50 and p95 latency quantiles)
+
+---
+
+## Load Testing (1,000 Scheduled Emails Simulation)
+
+To validate behavior under heavy load and rate limits (as required by the hiring specification):
+
+```bash
+cd backend
+pnpm test:load
+```
+
+### What This Tests
+1. **Batch Ingestion**: Creates 1,000 scheduled emails in atomic batches across multiple senders.
+2. **Throughput Benchmark**: Measures database write throughput (e.g. `> 1,200 emails/sec`) and heap memory overhead.
+3. **Queue Ingestion**: Observe jobs instantly populate the Bull Board (`/admin/queues`) and Grafana rate curves in real time.
+4. **Rate Limit Overflow**: Verifies that emails exceeding a sender's quota are deferred into the subsequent hourly window without dropping.
 
 ---
 
@@ -431,19 +475,70 @@ Unit & Integration test suites (**23 tests passing across 5 suites**):
 
 ---
 
-## Assumptions & Trade-offs
+## System Design Analysis: Assumptions, Shortcuts, & Trade-offs
 
-1. **Exactly-once vs effectively-once**: True exactly-once SMTP delivery is impossible. We implement the strongest practical idempotency (deterministic job IDs + DB check before send).
+When designing and evaluating distributed scheduling architectures, understanding architectural trade-offs and operational failure boundaries is critical.
 
-2. **Redis restart**: If Redis is completely wiped without backup, delayed jobs are lost. Mitigated by: AOF persistence + startup reconciliation from DB.
+### 1. Assumptions — What Did We Assume?
 
-3. **Elasticsearch availability**: ES is non-critical. If down, email delivery continues normally; search returns empty results with a warning log.
+| Assumption | Operational Meaning & Architectural Impact |
+|---|---|
+| **Single-Region Deployment** | All application nodes, PostgreSQL primary, and Redis clusters operate within a single cloud region (low network latency assumed between API and Redis). |
+| **Hourly Rate Limiting** | Sending quotas are enforced per 60-minute wall-clock sliding/fixed window keyed by sender account (`hourWindow = floor(epoch / 3600000)`). |
+| **SMTP Acceptance = Successful Operation** | When the upstream SMTP server returns `250 OK` / queued, the scheduler considers its contract fulfilled. End-inbox placement depends on recipient MTA spam filters. |
+| **Strict Sender Ownership** | Users may only schedule campaigns and dispatch emails through verified sender accounts linked to their tenant ID. |
+| **Test Environment** | Ethereal SMTP is used to safely capture, inspect, and verify MIME messages without dispatching unsolicited emails to real inboxes. |
+| **Eventual Search Consistency** | Transactional PostgreSQL write is the immediate source of truth; Elasticsearch full-text indexing operates asynchronously. |
 
-4. **Slack channel**: Currently posts to `#general`. In production, store the user's preferred channel during OAuth.
+---
 
-5. **Single queue, multiple workers**: Designed for horizontal scaling — add more worker instances without code changes.
+### 2. Shortcuts — What Did We Simplify?
 
-6. **SMTP credentials**: Using Ethereal (fake SMTP). In production, swap `SenderAccount` SMTP settings to a real provider (SendGrid, SES, etc.).
+| Functional Area | Chosen Simplification | Enterprise / Production Alternative | Rationale |
+|---|---|---|---|
+| **Email Transport** | Ethereal Fake SMTP | Amazon SES / SendGrid / Mailgun | Prevents accidental delivery to real recipients during evaluation while providing web preview URLs. |
+| **Crash Recovery** | Startup Reconciliation | Continuous Transactional Outbox Dispatcher | PostgreSQL is scanned at boot for unfinished future jobs. Simpler and zero-lag recovery without standing pollers. |
+| **Search Storage** | Elasticsearch 8 with DB fallback | Multi-node OpenSearch with CDC (Debezium) | Direct dual-write/indexing with graceful fallback to DB if ES is offline. |
+| **Session Auth** | HTTP-Only JWT Cookies + Bearer | OAuth2 Authorization Server + OIDC | Stateless JWT verification eliminates database session lookups on high-frequency API routes. |
+
+---
+
+### 3. Trade-offs — What Did We Sacrifice?
+
+#### Trade-off 1: Redis (BullMQ) vs. PostgreSQL Polling for Scheduling
+- **Decision:** Use Redis-backed BullMQ delayed sets rather than periodic database queries (`SELECT ... WHERE scheduled_at <= NOW()`).
+- **Gains:** Sub-millisecond queue operations, distributed lock-free job reservation across multiple workers, offloading transactional database CPU.
+- **Sacrifice:** Dual-system state consistency. Requires startup reconciliation if Redis memory is evicted or wiped.
+
+#### Trade-off 2: Fail-Open vs. Fail-Closed Rate Limiting
+- **Decision:** Fail-Open. If Redis is temporarily unreachable during the rate-limit Lua check, the worker logs a warning and permits the email to proceed.
+- **Gains:** Outbox campaigns are not halted during transient Redis connection blips.
+- **Sacrifice:** Slight risk of exceeding a sender's hourly quota during Redis network partitions.
+- *Interview Note:* In a production cold-email SaaS where IP/domain reputation is paramount, this can be toggled to fail-closed via configuration.
+
+#### Trade-off 3: Exactly-Once vs. Effectively-Once Delivery
+- **Decision:** Effectively-Once delivery using SHA-256 idempotency hashing (`sha256(userId|recipient|scheduledAt)`), unique database constraints, and pre-send status checks.
+- **Gains:** Prevents duplicate scheduling from repeated user clicks or network retries.
+- **Sacrifice:** A narrow ambiguity window remains if a worker crashes after SMTP accepts the message but before PostgreSQL commits `status=SENT`.
+
+#### Trade-off 4: Elasticsearch vs. PostgreSQL Search
+- **Decision:** Elasticsearch handles full-text search across subject and body; PostgreSQL remains the transactional system of record.
+- **Gains:** High-speed fuzzy search across millions of emails without degrading primary database performance.
+- **Sacrifice:** Eventual consistency — there can be a 100–500ms delay before a newly sent email appears in search queries.
+
+#### Trade-off 5: Dedicated Queues vs. Single Unified Queue
+- **Decision:** Segregated queues for email delivery (`email-jobs`), search indexing (`indexing-jobs`), and alerts (`notification-jobs`).
+- **Gains:** Auxiliary service lag (e.g. slow Elasticsearch cluster) cannot block or delay core SMTP email delivery.
+- **Sacrifice:** Higher operational overhead and more queue workers to monitor and scale.
+
+---
+
+### 4. Future Enhancements (With More Time)
+
+1. **Continuous Transactional Outbox Dispatcher:** Decouple event publishing from API handlers completely using a persistent background outbox processor.
+2. **Delivery Event Webhooks:** Ingest real-time bounce, spam complaint, open, and click tracking webhooks from upstream providers.
+3. **Sliding-Window Rolling Rate Limiter:** Replace fixed hour-bucket counters with Redis sorted sets (`ZADD` / `ZREMRANGEBYSCORE`) to eliminate quota bursts at hour boundaries.
+4. **Multi-Region Active-Active Setup:** Deploy worker pools across multiple AWS/GCP regions with localized Redis instances for latency reduction.
 
 ---
 

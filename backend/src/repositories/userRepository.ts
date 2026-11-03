@@ -30,8 +30,9 @@ export class UserRepository {
     avatarUrl?: string;
   }) {
     return prisma.user.upsert({
-      where: { googleId: profile.googleId },
+      where: { email: profile.email },
       update: {
+        googleId:  profile.googleId,
         name:      profile.name,
         avatarUrl: profile.avatarUrl,
       },

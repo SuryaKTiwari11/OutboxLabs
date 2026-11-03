@@ -13,14 +13,21 @@ import { logger } from "../utils/logger";
 // BullMQ recommends creating dedicated connections per queue/worker
 // rather than sharing a single connection.
 export function createRedisClient(name?: string): Redis {
-  const client = new Redis({
-    host: env.REDIS_HOST,
-    port: env.REDIS_PORT,
-    password: env.REDIS_PASSWORD,
-    maxRetriesPerRequest: null, // required by BullMQ
-    enableReadyCheck: false,    // required by BullMQ
-    lazyConnect: false,
-  });
+  const client = env.REDIS_URL
+    ? new Redis(env.REDIS_URL, {
+        maxRetriesPerRequest: null, // required by BullMQ
+        enableReadyCheck: false,    // required by BullMQ
+        lazyConnect: false,
+        tls: env.REDIS_URL.startsWith("rediss://") ? { rejectUnauthorized: false } : undefined,
+      })
+    : new Redis({
+        host: env.REDIS_HOST,
+        port: env.REDIS_PORT,
+        password: env.REDIS_PASSWORD,
+        maxRetriesPerRequest: null, // required by BullMQ
+        enableReadyCheck: false,    // required by BullMQ
+        lazyConnect: false,
+      });
 
   client.on("connect", () => {
     logger.info(`[Redis${name ? `:${name}` : ""}] Connected`);

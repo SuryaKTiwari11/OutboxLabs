@@ -33,7 +33,48 @@ export const authController = {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    res.redirect(`${env.FRONTEND_URL}/dashboard`);
+    res.redirect(`${env.FRONTEND_URL}/?token=${token}`);
+  },
+
+  // POST /api/auth/dev-login — one-click login for quick testing
+  async devLogin(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      // Find-or-create: key on email (not googleId) to avoid duplicate conflicts
+      let user = await userRepository.findByEmail("demo@reachinbox.io");
+      if (!user) {
+        user = await userRepository.upsertFromGoogle({
+          googleId: "dev-test-google-id",
+          email: "demo@reachinbox.io",
+          name: "Demo User",
+          avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=DemoUser",
+        });
+      }
+
+      const token = generateJwt(user.id, user.email);
+
+      res.cookie("auth_token", token, {
+        httpOnly: true,
+        secure: env.isProduction(),
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          token,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            avatarUrl: user.avatarUrl,
+          },
+        },
+      };
+      res.json(response);
+    } catch (err) {
+      next(err);
+    }
   },
 
   // POST /api/auth/logout

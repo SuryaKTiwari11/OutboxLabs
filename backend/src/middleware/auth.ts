@@ -14,6 +14,7 @@ import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { AuthenticatedRequest } from "../types";
 import { AppError } from "./errorHandler";
+import { prisma } from "../config/database";
 
 interface JwtPayload {
   userId: string;
@@ -22,11 +23,11 @@ interface JwtPayload {
   exp: number;
 }
 
-export function authMiddleware(
+export async function authMiddleware(
   req: AuthenticatedRequest,
   _res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   try {
     // Try cookie first, then Authorization header
     const token =

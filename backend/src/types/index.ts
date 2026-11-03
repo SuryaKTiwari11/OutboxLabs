@@ -68,16 +68,31 @@ export interface BulkSchedulePayload {
 }
 
 // ── BullMQ Job Data ────────────────────────────────────────────
-// This is the data stored inside every BullMQ job.
+// Lightweight payload: only identifiers stored in Redis to minimize memory footprint.
+// Full email body and recipient are fetched from DB by worker on execution.
 export interface EmailJobData {
   scheduledEmailId: string;
-  userId: string;
-  senderId: string;
-  recipient: string;
-  subject: string;
-  body: string;
   idempotencyKey: string;
+  userId?: string;
+  senderId?: string;
+  recipient?: string;
+  subject?: string;
+  body?: string;
 }
+
+export interface IndexingJobData {
+  scheduledEmailId: string;
+  action: "INDEX" | "UPDATE_STATUS" | "DELETE";
+  status?: EmailStatus;
+}
+
+export interface NotificationJobData {
+  userId: string;
+  senderEmail: string;
+  limitReached: number;
+  nextWindowAt: string; // ISO 8601
+}
+
 
 // ── Rate Limiting ─────────────────────────────────────────────
 export interface RateLimitResult {

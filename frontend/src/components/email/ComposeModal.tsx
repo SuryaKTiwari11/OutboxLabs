@@ -4,7 +4,7 @@
 //  Supports CSV/TXT upload, manual entry, recipient review & removal.
 // ─────────────────────────────────────────────────────────────
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -59,18 +59,34 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
   const [manualEmail, setManualEmail] = useState("");
   const [showRecipientList, setShowRecipientList] = useState(false);
 
+  const getNowDatetimeLocal = () => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  };
+
   const {
     register,
     handleSubmit,
     formState: { errors },
     reset,
+    setValue,
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
+      startAt:        getNowDatetimeLocal(),
       delayBetweenMs: 2000,
       hourlyLimit:    200,
+      senderId:       senders[0]?.id ?? "",
     },
   });
+
+  // Automatically select first sender if available
+  useEffect(() => {
+    if (senders.length > 0) {
+      setValue("senderId", senders[0].id);
+    }
+  }, [senders, setValue]);
 
   // Parse CSV / TXT file for email addresses
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -184,8 +200,14 @@ export function ComposeModal({ isOpen, onClose }: ComposeModalProps) {
   const onSubmit = async (data: FormData) => {
     if (!parseResult || parseResult.valid.length === 0) return;
 
+    const startAtDate = data.startAt ? new Date(data.startAt) : new Date();
+    const formattedStartAt = isNaN(startAtDate.getTime())
+      ? new Date().toISOString()
+      : startAtDate.toISOString();
+
     await bulkSchedule.mutateAsync({
       ...data,
+      startAt: formattedStartAt,
       recipients: parseResult.valid,
     });
 

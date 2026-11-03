@@ -1,7 +1,6 @@
 // ─────────────────────────────────────────────────────────────
 //  layouts/ProtectedRoute.tsx
-//  Guards routes that require authentication.
-//  Redirects to /login if not authenticated.
+//  Redirects unauthenticated users to /login.
 // ─────────────────────────────────────────────────────────────
 
 import { Navigate } from "react-router-dom";
@@ -12,12 +11,12 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isLoading, isAuthenticated } = useAuth();
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="w-8 h-8 rounded-full border-4 border-[#00A63E] border-t-transparent animate-spin" />
       </div>
     );
   }
@@ -28,4 +27,3 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   return <>{children}</>;
 }
-

@@ -1,57 +1,88 @@
 // ─────────────────────────────────────────────────────────────
 //  queues/emailQueue.ts
-//  BullMQ Queue definition for email jobs.
-//
-//  Design decisions:
-//  - One queue: "email-jobs"
-//  - Jobs use deterministic IDs (idempotencyKey) → no duplicates
-//  - defaultJobOptions define retry behavior globally
-//  - Separate Redis connections for queue vs worker (BullMQ requirement)
+//  BullMQ Queue definitions for decoupled, horizontally scalable workloads:
+//  1. emailQueue ("email-jobs"): Primary delayed delivery queue
+//  2. indexingQueue ("indexing-jobs"): Asynchronous Elasticsearch indexing
+//  3. notificationQueue ("notification-jobs"): Asynchronous Slack notifications
+//  4. dlqQueue ("email-dlq"): Dead-letter queue for terminal failures
 // ─────────────────────────────────────────────────────────────
 
 import { Queue, QueueEvents } from "bullmq";
 import { createRedisClient } from "../config/redis";
-import { EmailJobData } from "../types";
+import { EmailJobData, IndexingJobData, NotificationJobData } from "../types";
 import { logger } from "../utils/logger";
+import { queueDepthGauge } from "../config/metrics";
 
 export const EMAIL_QUEUE_NAME = "email-jobs";
+export const INDEXING_QUEUE_NAME = "indexing-jobs";
+export const NOTIFICATION_QUEUE_NAME = "notification-jobs";
+export const DLQ_QUEUE_NAME = "email-dlq";
 
-// ── Queue instance ─────────────────────────────────────────────
-// Use a dedicated Redis connection for the queue.
+const defaultJobOptions = {
+  removeOnComplete: { count: 1000 },
+  removeOnFail: { count: 1000 },
+  attempts: 5,
+  backoff: {
+    type: "exponential" as const,
+    delay: 5000,
+  },
+};
+
+// ── 1. Primary Email Queue ─────────────────────────────────────
 export const emailQueue = new Queue<EmailJobData>(EMAIL_QUEUE_NAME, {
-  connection: createRedisClient("queue"),
+  connection: createRedisClient("queue:email"),
+  defaultJobOptions,
+});
+
+// ── 2. Async Search Indexing Queue ─────────────────────────────
+export const indexingQueue = new Queue<IndexingJobData>(INDEXING_QUEUE_NAME, {
+  connection: createRedisClient("queue:indexing"),
   defaultJobOptions: {
-    // Remove job from queue after it completes (keep last 1000 for Bull Board)
-    removeOnComplete: { count: 1000 },
-    // Keep failed jobs for debugging (last 500)
+    removeOnComplete: { count: 500 },
     removeOnFail: { count: 500 },
-    // Retry strategy: exponential backoff
-    attempts: 5,
-    backoff: {
-      type: "exponential",
-      delay: 5000, // 5s, 10s, 20s, 40s, 80s
-    },
+    attempts: 3,
+    backoff: { type: "exponential", delay: 2000 },
   },
 });
 
-// ── Queue Events (for logging and monitoring) ─────────────────
+// ── 3. Async Notification Queue ────────────────────────────────
+export const notificationQueue = new Queue<NotificationJobData>(NOTIFICATION_QUEUE_NAME, {
+  connection: createRedisClient("queue:notification"),
+  defaultJobOptions: {
+    removeOnComplete: { count: 500 },
+    removeOnFail: { count: 500 },
+    attempts: 3,
+    backoff: { type: "exponential", delay: 2000 },
+  },
+});
+
+// ── 4. Dead Letter Queue (DLQ) ─────────────────────────────────
+export const dlqQueue = new Queue<EmailJobData & { error: string }>(DLQ_QUEUE_NAME, {
+  connection: createRedisClient("queue:dlq"),
+  defaultJobOptions: {
+    removeOnComplete: false,
+    removeOnFail: false,
+  },
+});
+
+// ── Queue Events ───────────────────────────────────────────────
 export const emailQueueEvents = new QueueEvents(EMAIL_QUEUE_NAME, {
-  connection: createRedisClient("queue-events"),
+  connection: createRedisClient("queue-events:email"),
 });
 
 emailQueueEvents.on("completed", ({ jobId }) => {
-  logger.info(`[Queue] Job completed`, { jobId });
+  logger.info(`[Queue] Email job completed`, { jobId });
 });
 
 emailQueueEvents.on("failed", ({ jobId, failedReason }) => {
-  logger.error(`[Queue] Job failed`, { jobId, reason: failedReason });
+  logger.error(`[Queue] Email job failed`, { jobId, reason: failedReason });
 });
 
 emailQueueEvents.on("delayed", ({ jobId, delay }) => {
-  logger.info(`[Queue] Job delayed`, { jobId, delayMs: delay });
+  logger.info(`[Queue] Email job delayed`, { jobId, delayMs: delay });
 });
 
-// ── Helper: add a single email job ────────────────────────────
+// ── Helper: add a single email job (lightweight payload) ────────
 export async function enqueueEmailJob(
   data: EmailJobData,
   scheduledAt: Date
@@ -62,14 +93,13 @@ export async function enqueueEmailJob(
     "send-email",
     data,
     {
-      jobId: data.idempotencyKey, // deterministic → prevents duplicates
+      jobId: data.idempotencyKey, // deterministic ID
       delay,
     }
   );
 
   logger.info(`[Queue] Email job enqueued`, {
     jobId: job.id,
-    recipient: data.recipient,
     delayMs: delay,
     scheduledAt: scheduledAt.toISOString(),
   });
@@ -77,13 +107,56 @@ export async function enqueueEmailJob(
   return job.id!;
 }
 
-// ── Helper: check if a job exists in the queue ────────────────
+// ── Helper: enqueue async indexing ─────────────────────────────
+export async function enqueueIndexingJob(data: IndexingJobData): Promise<void> {
+  await indexingQueue.add("index-email", data, {
+    jobId: `idx:${data.scheduledEmailId}:${data.action}:${Date.now()}`,
+  });
+}
+
+// ── Helper: enqueue async notification ─────────────────────────
+export async function enqueueNotificationJob(data: NotificationJobData): Promise<void> {
+  await notificationQueue.add("slack-alert", data, {
+    jobId: `slack:${data.userId}:${data.senderEmail}:${Date.now()}`,
+  });
+}
+
+// ── Helper: enqueue to DLQ ─────────────────────────────────────
+export async function enqueueDeadLetter(
+  data: EmailJobData,
+  error: string
+): Promise<void> {
+  await dlqQueue.add("dead-letter", { ...data, error }, {
+    jobId: `dlq:${data.scheduledEmailId}:${Date.now()}`,
+  });
+  logger.warn(`[Queue] Moved job to Dead-Letter Queue`, { emailId: data.scheduledEmailId, error });
+}
+
 export async function getJobById(jobId: string) {
   return emailQueue.getJob(jobId);
 }
 
-export async function closeEmailQueue(): Promise<void> {
-  await emailQueue.close();
-  await emailQueueEvents.close();
+// ── Metrics collection helper for queues ───────────────────────
+export async function updateQueueMetrics(): Promise<void> {
+  const [waiting, active, delayed, failed] = await Promise.all([
+    emailQueue.getWaitingCount(),
+    emailQueue.getActiveCount(),
+    emailQueue.getDelayedCount(),
+    emailQueue.getFailedCount(),
+  ]);
+
+  queueDepthGauge.set({ queue: EMAIL_QUEUE_NAME, status: "waiting" }, waiting);
+  queueDepthGauge.set({ queue: EMAIL_QUEUE_NAME, status: "active" }, active);
+  queueDepthGauge.set({ queue: EMAIL_QUEUE_NAME, status: "delayed" }, delayed);
+  queueDepthGauge.set({ queue: EMAIL_QUEUE_NAME, status: "failed" }, failed);
 }
 
+export async function closeEmailQueue(): Promise<void> {
+  await Promise.all([
+    emailQueue.close(),
+    indexingQueue.close(),
+    notificationQueue.close(),
+    dlqQueue.close(),
+    emailQueueEvents.close(),
+  ]);
+}

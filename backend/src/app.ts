@@ -16,13 +16,14 @@ import { ExpressAdapter } from "@bull-board/express";
 
 import { env } from "./config/env";
 import { configurePassport } from "./config/passport";
-import { emailQueue } from "./queues/emailQueue";
+import { emailQueue, indexingQueue, notificationQueue, dlqQueue, updateQueueMetrics } from "./queues/emailQueue";
 import { emailRouter } from "./routes/emailRoutes";
 import { authRouter } from "./routes/authRoutes";
 import { slackRouter } from "./routes/slackRoutes";
 import { senderRouter } from "./routes/senderRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 import { bullBoardAuth } from "./middleware/auth";
+import { register } from "./config/metrics";
 
 export function createApp(): express.Application {
   const app = express();
@@ -59,7 +60,12 @@ export function createApp(): express.Application {
   createBullBoard({
     // BullMQ v5 has slightly different JobProgress types vs @bull-board v5 expectations
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    queues: [(new BullMQAdapter(emailQueue)) as any],
+    queues: [
+      (new BullMQAdapter(emailQueue)) as any,
+      (new BullMQAdapter(indexingQueue)) as any,
+      (new BullMQAdapter(notificationQueue)) as any,
+      (new BullMQAdapter(dlqQueue)) as any,
+    ],
     serverAdapter,
   });
 
@@ -72,6 +78,17 @@ export function createApp(): express.Application {
   // ── Health check ──────────────────────────────────────────────
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // ── Prometheus Metrics Endpoint ───────────────────────────────
+  app.get("/metrics", async (_req, res) => {
+    try {
+      await updateQueueMetrics();
+      res.setHeader("Content-Type", register.contentType);
+      res.send(await register.metrics());
+    } catch (err) {
+      res.status(500).send((err as Error).message);
+    }
   });
 
   // ── API Routes ────────────────────────────────────────────────

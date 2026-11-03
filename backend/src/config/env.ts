@@ -41,6 +41,7 @@ export const env = {
   DATABASE_URL: requireEnv("DATABASE_URL"),
 
   // Redis
+  REDIS_URL: process.env["REDIS_URL"],
   REDIS_HOST: optionalEnv("REDIS_HOST", "localhost"),
   REDIS_PORT: optionalEnvInt("REDIS_PORT", 6379),
   REDIS_PASSWORD: process.env["REDIS_PASSWORD"],
@@ -54,10 +55,14 @@ export const env = {
   GOOGLE_CLIENT_SECRET: requireEnv("GOOGLE_CLIENT_SECRET"),
   GOOGLE_CALLBACK_URL: requireEnv("GOOGLE_CALLBACK_URL"),
 
-  // Slack OAuth
-  SLACK_CLIENT_ID: requireEnv("SLACK_CLIENT_ID"),
-  SLACK_CLIENT_SECRET: requireEnv("SLACK_CLIENT_SECRET"),
-  SLACK_REDIRECT_URI: requireEnv("SLACK_REDIRECT_URI"),
+  // Slack
+  SLACK_APP_ID: optionalEnv("SLACK_APP_ID", "A0CF9GCESU8"),
+  SLACK_CLIENT_ID: optionalEnv("SLACK_CLIENT_ID", "dev_slack_client_id"),
+  SLACK_CLIENT_SECRET: optionalEnv("SLACK_CLIENT_SECRET", "dev_slack_client_secret"),
+  SLACK_SIGNING_SECRET: optionalEnv("SLACK_SIGNING_SECRET", ""),
+  SLACK_BOT_TOKEN: optionalEnv("SLACK_BOT_TOKEN", ""),
+  SLACK_REDIRECT_URI: optionalEnv("SLACK_REDIRECT_URI", "http://localhost:4000/api/slack/callback"),
+  SLACK_DEFAULT_CHANNEL: optionalEnv("SLACK_DEFAULT_CHANNEL", "general"),
 
   // Security
   JWT_SECRET: requireEnv("JWT_SECRET"),

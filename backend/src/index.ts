@@ -57,12 +57,23 @@ async function bootstrap(): Promise<void> {
     });
   });
 
+  // 4b. Optionally run queue workers in the same process (1-server deployment)
+  let closeWorkers: (() => Promise<void>) | null = null;
+  if (process.env.RUN_WORKER === "true") {
+    logger.info("[Bootstrap] Starting in-process BullMQ workers (single-server mode)...");
+    const { startWorkers } = await import("./workers");
+    closeWorkers = await startWorkers();
+  }
+
   // 5. Graceful shutdown
   const shutdown = async (signal: string): Promise<void> => {
     logger.info(`[Bootstrap] ${signal} received — shutting down...`);
 
     // Stop accepting new requests
     server.close(async () => {
+      if (closeWorkers) {
+        await closeWorkers();
+      }
       await disconnectDatabase();
       await closeEmailQueue();
       await closeRedisClient();

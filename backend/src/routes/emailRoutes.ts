@@ -16,23 +16,27 @@ const router = Router();
 router.use(authMiddleware as never);
 
 // ── Validation schemas ─────────────────────────────────────────
+const datetimeSchema = z.string().refine((val) => !isNaN(Date.parse(val)), {
+  message: "Invalid datetime format",
+});
+
 const scheduleSchema = z.object({
   recipientEmail: z.string().email(),
   subject:        z.string().min(1).max(500),
   body:           z.string().min(1),
-  scheduledAt:    z.string().datetime(),
-  senderId:       z.string().cuid(),
-  campaignId:     z.string().cuid().optional(),
+  scheduledAt:    datetimeSchema,
+  senderId:       z.string().min(1, "Sender ID is required"),
+  campaignId:     z.string().optional(),
 });
 
 const bulkScheduleSchema = z.object({
   recipients:     z.array(z.string().email()).min(1).max(10000),
   subject:        z.string().min(1).max(500),
   body:           z.string().min(1),
-  startAt:        z.string().datetime(),
-  delayBetweenMs: z.number().int().min(0).max(3_600_000),
-  hourlyLimit:    z.number().int().min(1).max(10000),
-  senderId:       z.string().cuid(),
+  startAt:        datetimeSchema,
+  delayBetweenMs: z.coerce.number().int().min(0).max(3_600_000),
+  hourlyLimit:    z.coerce.number().int().min(1).max(10000),
+  senderId:       z.string().min(1, "Sender ID is required"),
   campaignName:   z.string().max(200).optional(),
 });
 
