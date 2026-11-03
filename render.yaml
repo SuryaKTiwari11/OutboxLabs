@@ -6,7 +6,7 @@ services:
     plan: free
     region: oregon
     buildCommand: cd backend && npm install --include=dev && npx prisma generate && npm run build
-    startCommand: cd backend && npx prisma db push && npm run start
+    startCommand: cd backend && npx prisma migrate deploy && npm run start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -37,7 +37,7 @@ services:
     plan: free
     region: oregon
     buildCommand: cd backend && npm install --include=dev && npx prisma generate && npm run build
-    startCommand: cd backend && npm run start:worker
+    startCommand: cd backend && npx prisma migrate deploy && npm run start:worker
     envVars:
       - key: NODE_ENV
         value: production
@@ -67,4 +67,3 @@ services:
         sync: false # Set to your deployed backend URL + /api (or empty if using proxy)
       - key: VITE_BACKEND_URL
         sync: false # Set to your deployed backend URL
-
