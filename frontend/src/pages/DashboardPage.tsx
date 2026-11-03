@@ -97,13 +97,13 @@ export function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-white flex font-sans overflow-x-hidden">
+    <div className="min-h-screen w-full bg-white flex flex-col md:flex-row font-sans overflow-x-hidden">
       {/* =================================================================
           SIDEBAR (260px wide, content width 236px, left offset 8px)
           ================================================================= */}
-      <aside className="w-[260px] h-screen flex-shrink-0 flex flex-col pl-[8px] pr-[16px] pt-[20px] select-none">
+      <aside className="w-full md:w-[260px] md:h-screen flex-shrink-0 flex flex-col px-4 md:pl-[8px] md:pr-[16px] pt-4 md:pt-[20px] select-none">
         {/* 1. Logo "ONB": pixel/8-bit wordmark, ~74x30px, black at x=20px y=20px */}
-        <div className="pl-[12px] mb-[28px] flex items-center">
+        <div className="pl-1 md:pl-[12px] mb-5 md:mb-[28px] flex items-center">
           <img
             src="/onb-logo.png"
             alt="ONB"
@@ -125,7 +125,7 @@ export function DashboardPage() {
         <div className="relative" ref={userMenuRef}>
           <div
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-            className="w-[236px] h-[56px] bg-[#F4F7F5] rounded-[10px] pl-[12px] pr-[12px] flex items-center justify-between cursor-pointer hover:bg-[#eef2ef] transition-colors mb-[12px]"
+            className="w-full md:w-[236px] h-[56px] bg-[#F4F7F5] rounded-[10px] pl-[12px] pr-[12px] flex items-center justify-between cursor-pointer hover:bg-[#eef2ef] transition-colors mb-[12px]"
           >
             <div className="flex items-center gap-[10px] overflow-hidden">
               <img
@@ -158,29 +158,13 @@ export function DashboardPage() {
               className="absolute top-[60px] left-0 w-[240px] bg-white rounded-[10px] shadow-xl border border-[#E5E7EB] p-[12px] z-50 flex flex-col animate-in fade-in zoom-in-95 duration-100"
               style={{ boxShadow: "0 4px 16px rgba(0, 0, 0, 0.12)" }}
             >
-              <div className="flex items-center gap-[10px] pb-[10px] border-b border-[#F1F2F4]">
-                <img
-                  src={displayAvatar}
-                  alt={displayName}
-                  className="w-[36px] h-[36px] rounded-full object-cover border border-[#E5E7EB]"
-                />
-                <div className="flex flex-col overflow-hidden">
-                  <span className="text-[13px] font-[600] text-[#101828] truncate">
-                    {displayName}
-                  </span>
-                  <span className="text-[11px] text-[#6A7282] truncate">
-                    {displayEmail}
-                  </span>
-                  {isAuthenticated ? (
-                    <span className="text-[10px] text-[#00A63E] font-[500] mt-[1px]">
-                      ● Signed in
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-[#CA3500] font-[500] mt-[1px]">
-                      ● Guest preview
-                    </span>
-                  )}
-                </div>
+              <div className="pb-[10px] border-b border-[#F1F2F4]">
+                <span className="text-[11px] text-[#6A7282]">Account</span>
+                <span className={`block text-[10px] font-[500] mt-[2px] ${
+                  isAuthenticated ? "text-[#00A63E]" : "text-[#CA3500]"
+                }`}>
+                  {isAuthenticated ? "● Signed in" : "● Guest preview"}
+                </span>
               </div>
 
               {/* Menu options */}
@@ -225,7 +209,7 @@ export function DashboardPage() {
         {/* 3. Compose button (12px below): 236x34, transparent, 1px #00A63E border, pill, text "Compose" 14px weight 500 #00A63E */}
         <button
           onClick={() => navigate("/compose")}
-          className="w-[236px] h-[34px] rounded-full border border-[#00A63E] bg-transparent text-[#00A63E] text-[14px] font-[500] hover:bg-[#E5F6EC] transition-colors flex items-center justify-center mb-[20px]"
+          className="w-full md:w-[236px] h-[34px] rounded-full border border-[#00A63E] bg-transparent text-[#00A63E] text-[14px] font-[500] hover:bg-[#E5F6EC] transition-colors flex items-center justify-center mb-[20px]"
         >
           Compose
         </button>
@@ -236,11 +220,11 @@ export function DashboardPage() {
         </div>
 
         {/* 5. Nav items: each 236x36, radius 10px, gap 2px */}
-        <nav className="flex flex-col gap-[2px] w-[236px]">
+        <nav className="flex flex-col gap-[2px] w-full md:w-[236px]">
           {/* Scheduled Nav */}
           <button
             onClick={() => setTab("scheduled")}
-            className={`w-[236px] h-[36px] rounded-[10px] flex items-center justify-between pl-[16px] pr-[20px] transition-colors ${
+            className={`w-full md:w-[236px] h-[36px] rounded-[10px] flex items-center justify-between pl-[16px] pr-[20px] transition-colors ${
               tab === "scheduled"
                 ? "bg-[#E5F6EC] text-[#101828] font-[600]"
                 : "bg-transparent text-[#101828] font-[400] hover:bg-[#F4F7F5]"
@@ -258,7 +242,7 @@ export function DashboardPage() {
           {/* Sent Nav */}
           <button
             onClick={() => setTab("sent")}
-            className={`w-[236px] h-[36px] rounded-[10px] flex items-center justify-between pl-[16px] pr-[20px] transition-colors ${
+            className={`w-full md:w-[236px] h-[36px] rounded-[10px] flex items-center justify-between pl-[16px] pr-[20px] transition-colors ${
               tab === "sent"
                 ? "bg-[#E5F6EC] text-[#101828] font-[600]"
                 : "bg-transparent text-[#101828] font-[400] hover:bg-[#F4F7F5]"
@@ -279,11 +263,11 @@ export function DashboardPage() {
           MAIN CONTENT AREA (starts 16px after sidebar, ends 16px from right edge)
           Total list width = 1148px
           ================================================================= */}
-      <main className="flex-1 flex flex-col pt-[20px] pl-[16px] pr-[16px] max-w-[1180px]">
+      <main className="min-w-0 w-full flex-1 flex flex-col pt-5 px-4 md:pl-[16px] md:pr-[16px] max-w-none md:max-w-[1180px]">
         {/* MAIN TOOLBAR */}
         <div className="flex items-center h-[38px] mb-[16px]">
           {/* Search bar: 672x38 pill, bg #F4F7F5, no border */}
-          <div className="w-[672px] h-[38px] bg-[#F4F7F5] rounded-full flex items-center pl-[14px] pr-[16px]">
+          <div className="min-w-0 flex-1 md:flex-none md:w-[672px] h-[38px] bg-[#F4F7F5] rounded-full flex items-center pl-[14px] pr-[16px]">
             <Search className="w-[16px] h-[16px] text-[#99A1AF] stroke-[1.5] flex-shrink-0" />
             <input
               type="text"
@@ -324,9 +308,9 @@ export function DashboardPage() {
         </div>
 
         {/* EMAIL LIST: 1148px wide */}
-        <div className="w-[1148px] flex flex-col">
+        <div className="w-full overflow-x-auto flex flex-col">
           {filteredList.length === 0 ? (
-            <div className="w-[1148px] py-[64px] flex flex-col items-center justify-center text-center">
+            <div className="w-full py-[64px] flex flex-col items-center justify-center text-center">
               <div className="w-[48px] h-[48px] rounded-full bg-[#F4F7F5] flex items-center justify-center text-[#99A1AF] mb-[12px]">
                 {tab === "scheduled" ? (
                   <Clock className="w-[24px] h-[24px]" />
@@ -366,7 +350,7 @@ export function DashboardPage() {
               <div
                 key={email.id}
                 onClick={() => navigate(`/email/${email.id}`)}
-                className="w-[1148px] h-[56px] border-b border-[#F8F9FA] px-[24px] flex items-center justify-between cursor-pointer hover:bg-[#F9FAFB] transition-colors group"
+                className="min-w-[760px] md:min-w-0 w-full h-[56px] border-b border-[#F8F9FA] px-4 md:px-[24px] flex items-center justify-between cursor-pointer hover:bg-[#F9FAFB] transition-colors group"
               >
                 {/* Left block: Column 1 + Column 2 */}
                 <div className="flex items-center flex-1 overflow-hidden">

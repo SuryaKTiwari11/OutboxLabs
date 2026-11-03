@@ -61,12 +61,13 @@ export function LoginPage() {
     <div className="min-h-screen w-full bg-white flex items-center justify-center p-4">
       {/* Centered card: ~496px wide x ~493px tall, 1px #F1F2F4 border, radius 12px, white */}
       <div
-        className="w-[496px] bg-white rounded-[12px] border border-[#F1F2F4] flex flex-col items-center"
+        className="w-full max-w-[496px] bg-white rounded-[12px] border border-[#F1F2F4] flex flex-col items-center"
         style={{
-          padding: "52px 58px",
+          padding: "clamp(24px, 8vw, 52px) clamp(20px, 8vw, 58px)",
+          boxSizing: "border-box",
         }}
       >
-        <div className="w-[380px] flex flex-col">
+        <div className="w-full max-w-[380px] flex flex-col">
           {/* Title "Login": centered, 36px, weight 700, #1C1C1C, line-height ~44px */}
           <h1 className="text-center text-[36px] font-[700] leading-[44px] text-[#1C1C1C] mb-[32px]">
             Login
@@ -76,7 +77,7 @@ export function LoginPage() {
           <button
             type="button"
             onClick={handleGoogleClick}
-            className="w-[380px] h-[48px] bg-[#E5F6EC] rounded-[10px] flex items-center justify-center gap-[8px] hover:bg-[#d8f0e2] transition-colors"
+            className="w-full h-[48px] bg-[#E5F6EC] rounded-[10px] flex items-center justify-center gap-[8px] hover:bg-[#d8f0e2] transition-colors"
           >
             {/* Centered colored Google "G" (18px) */}
             <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24">
@@ -102,7 +103,7 @@ export function LoginPage() {
             </span>
           </button>
 
-          <div className="mt-[28px] mb-[40px] flex items-center justify-between w-[380px]">
+          <div className="mt-[28px] mb-[40px] flex items-center justify-between w-full">
             <div className="w-[90px] h-[1px]" style={{ backgroundColor: "#E5E7EB" }} />
             <span className="text-[12px] text-[#A4A4A4] tracking-[0.4px]">
               or use test credentials below
@@ -124,20 +125,20 @@ export function LoginPage() {
                 placeholder="Email ID"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-[380px] h-[56px] bg-[#F4F7F5] rounded-[10px] pl-[20px] pr-[16px] text-[14px] text-[#101828] placeholder-[#636970] outline-none focus:ring-1 focus:ring-[#00A63E] transition-all"
+                className="w-full h-[56px] bg-[#F4F7F5] rounded-[10px] pl-[20px] pr-[16px] text-[14px] text-[#101828] placeholder-[#636970] outline-none focus:ring-1 focus:ring-[#00A63E] transition-all"
               />
               <input
                 type="password"
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-[380px] h-[56px] bg-[#F4F7F5] rounded-[10px] pl-[20px] pr-[16px] text-[14px] text-[#101828] placeholder-[#636970] outline-none focus:ring-1 focus:ring-[#00A63E] transition-all"
+                className="w-full h-[56px] bg-[#F4F7F5] rounded-[10px] pl-[20px] pr-[16px] text-[14px] text-[#101828] placeholder-[#636970] outline-none focus:ring-1 focus:ring-[#00A63E] transition-all"
               />
             </div>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="mt-[28px] w-[380px] h-[48px] bg-[#00A63E] hover:bg-[#008f35] text-white text-[14px] font-[500] rounded-[10px] transition-colors flex items-center justify-center disabled:opacity-70"
+              className="mt-[28px] w-full h-[48px] bg-[#00A63E] hover:bg-[#008f35] text-white text-[14px] font-[500] rounded-[10px] transition-colors flex items-center justify-center disabled:opacity-70"
             >
               {isSubmitting ? "Logging in..." : "Login"}
             </button>
