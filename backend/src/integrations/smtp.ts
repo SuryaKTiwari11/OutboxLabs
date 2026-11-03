@@ -30,6 +30,23 @@ interface SenderAccountLike {
   smtpSecure: boolean;
 }
 
+function smtpTransportOptions(
+  host: string,
+  port: number,
+  secure: boolean,
+  auth: { user: string; pass: string }
+) {
+  return {
+    host,
+    port,
+    secure,
+    auth,
+    connectionTimeout: env.SMTP_TIMEOUT_MS,
+    greetingTimeout: env.SMTP_TIMEOUT_MS,
+    socketTimeout: env.SMTP_TIMEOUT_MS,
+  };
+}
+
 // ── Default Ethereal credentials (auto-created if empty) ──────
 let _defaultTransporter: Transporter | null = null;
 
@@ -47,29 +64,29 @@ export async function getDefaultTransporter(): Promise<Transporter> {
 
   if (env.ETHEREAL_USER && env.ETHEREAL_PASS) {
     // Use credentials from .env
-    _defaultTransporter = nodemailer.createTransport({
-      host: env.ETHEREAL_HOST,
-      port: env.ETHEREAL_PORT,
-      secure: false,
-      auth: {
+    _defaultTransporter = nodemailer.createTransport(smtpTransportOptions(
+      env.ETHEREAL_HOST,
+      env.ETHEREAL_PORT,
+      false,
+      {
         user: env.ETHEREAL_USER,
         pass: env.ETHEREAL_PASS,
-      },
-    });
+      }
+    ));
     logger.info("[SMTP] Using Ethereal credentials from env");
   } else {
     // Auto-create a test account (requires network)
     logger.info("[SMTP] No Ethereal credentials found — creating test account...");
     const testAccount = await nodemailer.createTestAccount();
-    _defaultTransporter = nodemailer.createTransport({
-      host: "smtp.ethereal.email",
-      port: 587,
-      secure: false,
-      auth: {
+    _defaultTransporter = nodemailer.createTransport(smtpTransportOptions(
+      "smtp.ethereal.email",
+      587,
+      false,
+      {
         user: testAccount.user,
         pass: testAccount.pass,
-      },
-    });
+      }
+    ));
     logger.info(`[SMTP] Ethereal test account created: ${testAccount.user}`);
     logger.info(`[SMTP] Add to .env: ETHEREAL_USER=${testAccount.user} ETHEREAL_PASS=${testAccount.pass}`);
   }
@@ -84,15 +101,15 @@ export async function getDefaultTransporter(): Promise<Transporter> {
 export function createTransporterForSender(sender: SenderAccountLike): Transporter {
   const smtpPass = decrypt(sender.smtpPassEncrypted);
 
-  return nodemailer.createTransport({
-    host:   sender.smtpHost,
-    port:   sender.smtpPort,
-    secure: sender.smtpSecure,
-    auth: {
+  return nodemailer.createTransport(smtpTransportOptions(
+    sender.smtpHost,
+    sender.smtpPort,
+    sender.smtpSecure,
+    {
       user: sender.smtpUser,
       pass: smtpPass,
-    },
-  });
+    }
+  ));
 }
 
 /**
@@ -128,4 +145,3 @@ export async function sendEmail(
     previewUrl: typeof previewUrl === "string" ? previewUrl : null,
   };
 }
-

@@ -83,6 +83,7 @@ export const env = {
   ETHEREAL_PASS: process.env["ETHEREAL_PASS"],
   ETHEREAL_HOST: optionalEnv("ETHEREAL_HOST", "smtp.ethereal.email"),
   ETHEREAL_PORT: optionalEnvInt("ETHEREAL_PORT", 587),
+  SMTP_TIMEOUT_MS: optionalEnvInt("SMTP_TIMEOUT_MS", 30_000),
 
   // BullMQ / Scheduler
   WORKER_CONCURRENCY: optionalEnvInt("WORKER_CONCURRENCY", 5),
