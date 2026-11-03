@@ -28,14 +28,22 @@ function optionalEnvInt(key: string, fallback: number): number {
   return value ? parseInt(value, 10) : fallback;
 }
 
+function optionalEnvUrl(key: string, fallback: string): string {
+  let val = (process.env[key] ?? fallback).trim();
+  if (!val.startsWith("http://") && !val.startsWith("https://")) {
+    val = `https://${val}`;
+  }
+  return val.replace(/\/+$/, "");
+}
+
 // ─────────────────────────────────────────────────────────────
 
 export const env = {
   // App
   NODE_ENV: optionalEnv("NODE_ENV", "development"),
   PORT: optionalEnvInt("BACKEND_PORT", 4000),
-  FRONTEND_URL: optionalEnv("FRONTEND_URL", "http://localhost:5173"),
-  BACKEND_URL: optionalEnv("BACKEND_URL", "http://localhost:4000"),
+  FRONTEND_URL: optionalEnvUrl("FRONTEND_URL", "http://localhost:5173"),
+  BACKEND_URL: optionalEnvUrl("BACKEND_URL", "http://localhost:4000"),
 
   // Database
   DATABASE_URL: requireEnv("DATABASE_URL"),
