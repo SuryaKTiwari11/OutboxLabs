@@ -62,19 +62,13 @@ Slack callback: https://outboxlabs-odvu.onrender.com/api/slack/callback
 External credentials are intentionally not included in this repository. The
 deployed services receive them through Render/Vercel environment variables.
 
-### Local agent setup and verification
-
-For an agent-ready local setup procedure, use
-[`LOCAL_AGENT_RUNBOOK.md`](./LOCAL_AGENT_RUNBOOK.md). It starts PostgreSQL
-and Redis with Docker, optionally starts Elasticsearch, verifies Ethereal
-through local DNS/TCP/STARTTLS, runs the backend build and tests, and checks
-the local health endpoints without exposing credentials.
-
-The Render Free SMTP restriction does not apply to a local machine or local
-Docker network. Render Free services block outbound ports `25`, `465`, and
-`587`; therefore Ethereal port `587` can work locally while timing out from
-the deployed Free worker. See [Render SMTP networking](#render-smtp-networking)
-for the production remediation options.
+> **MAJOR ISSUE FOUND DURING RENDER DEPLOYMENT**
+>
+> The Render Free SMTP restriction does not apply to a local machine or local
+> Docker network. Render Free services block outbound ports `25`, `465`, and
+> `587`; therefore Ethereal port `587` can work locally while timing out from
+> the deployed Free worker. See [Render SMTP networking](#render-smtp-networking)
+> for the production remediation options.
 
 ## Architecture
 
