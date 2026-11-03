@@ -192,6 +192,55 @@ Express API
 - Unit tests covering authentication, scheduling, idempotency, encryption,
   rate limiting, and failure handling.
 
+## Feature-to-Requirement Mapping
+
+This section gives reviewers a fast checklist of the assignment requirements
+and where each one is implemented.
+
+### Backend requirements
+
+| Assignment requirement | Implemented solution | Evidence |
+|---|---|---|
+| Schedule at a specific time | BullMQ delayed job with `delay = scheduledAt - now` | `backend/src/queues/emailQueue.ts` |
+| No cron | Redis/BullMQ delayed sets plus continuous outbox polling | `backend/src/workers/outboxDispatcher.ts` |
+| Relational persistence | Prisma models for users, senders, campaigns, emails, attempts, Slack, outbox | `backend/prisma/schema.prisma` |
+| Multiple senders | Sender ownership validation and sender-specific SMTP credentials | `backend/src/integrations/smtp.ts` |
+| Ethereal SMTP | Nodemailer transport, message ID, preview URL | `backend/src/integrations/smtp.ts` |
+| Restart persistence | Redis AOF plus transactional outbox and startup reconciliation | `backend/src/services/outboxService.ts`, `backend/src/services/emailService.ts` |
+| Transactional DB/queue gap | Email and outbox event commit atomically; dispatcher publishes later | `backend/src/services/outboxService.ts` |
+| Duplicate scheduling | Unique deterministic idempotency key and deterministic BullMQ job ID | `backend/src/utils/idempotency.ts`, schema |
+| Duplicate processing | Fresh DB status check skips sent/cancelled records | `backend/src/workers/emailProcessor.ts` |
+| Worker concurrency | Configurable BullMQ worker concurrency | `WORKER_CONCURRENCY`, `backend/src/workers/index.ts` |
+| Minimum send delay | Configurable worker delay and BullMQ limiter | `MIN_EMAIL_DELAY_MS` |
+| Hourly quota | Atomic Redis Lua counter per sender/hour | `backend/src/services/rateLimitService.ts` |
+| Campaign quota | Campaign `hourlyLimit` is persisted and passed to worker reservation | `EmailCampaign.hourlyLimit` |
+| Quota overflow | Job is rescheduled to the next hourly window, never discarded | `backend/src/workers/emailProcessor.ts` |
+| Slack alert | Real Slack Web API call through notification queue | `backend/src/integrations/slack.ts` |
+| Slack deduplication | Redis `SET NX EX` atomic notification-window claim | `backend/src/integrations/slack.ts` |
+| Retry | Five attempts with exponential backoff | `backend/src/queues/emailQueue.ts` |
+| DLQ | Terminal SMTP failure copied to retained `email-dlq` | `backend/src/queues/emailQueue.ts` |
+| Search indexing | Async indexing queue and worker | `backend/src/workers/indexingWorker.ts` |
+| Search resilience | Elasticsearch first, PostgreSQL search fallback | `backend/src/services/emailService.ts` |
+| Queue monitoring | Protected Bull Board dashboard | `backend/src/app.ts` |
+| Observability | Prometheus counters, latency histograms, health endpoint | `/metrics`, `/health` |
+
+### Frontend requirements
+
+| Assignment requirement | Implemented solution |
+|---|---|
+| Google login | Real Google OAuth initiation and callback |
+| Demo login | `POST /api/auth/dev-login` remains available |
+| Authentication state | TanStack Query `/api/auth/me` and protected layout |
+| User identity | Name, email, avatar, logout |
+| Scheduled and sent views | Paginated dashboard tabs |
+| Compose flow | Subject, HTML body, sender, start time, delay, hourly limit |
+| CSV/TXT upload | PapaParse, common email columns, validation, deduplication |
+| CSV review | Active compose screen shows valid, invalid, and duplicate counts |
+| Sender switching | Uses real sender accounts from the API |
+| Search | Subject, recipient, and body search through API |
+| Email detail | Status, sender, body, timestamps, SMTP preview |
+| UX resilience | Loading states, empty states, errors, responsive layouts |
+
 ## Prerequisites
 
 - Node.js 18+
@@ -412,52 +461,6 @@ Queues:
 Use the dashboard root and select a queue/status tab. Internal Bull Board
 paths such as `/queue/email-jobs?status=completed` are not stable REST API
 endpoints.
-
-## Feature-to-Requirement Mapping
-
-### Backend requirements
-
-| Assignment requirement | Implemented solution | Evidence |
-|---|---|---|
-| Schedule at a specific time | BullMQ delayed job with `delay = scheduledAt - now` | `backend/src/queues/emailQueue.ts` |
-| No cron | Redis/BullMQ delayed sets plus continuous outbox polling | `backend/src/workers/outboxDispatcher.ts` |
-| Relational persistence | Prisma models for users, senders, campaigns, emails, attempts, Slack, outbox | `backend/prisma/schema.prisma` |
-| Multiple senders | Sender ownership validation and sender-specific SMTP credentials | `backend/src/integrations/smtp.ts` |
-| Ethereal SMTP | Nodemailer transport, message ID, preview URL | `backend/src/integrations/smtp.ts` |
-| Restart persistence | Redis AOF plus transactional outbox and startup reconciliation | `backend/src/services/outboxService.ts`, `backend/src/services/emailService.ts` |
-| Transactional DB/queue gap | Email and outbox event commit atomically; dispatcher publishes later | `backend/src/services/outboxService.ts` |
-| Duplicate scheduling | Unique deterministic idempotency key and deterministic BullMQ job ID | `backend/src/utils/idempotency.ts`, schema |
-| Duplicate processing | Fresh DB status check skips sent/cancelled records | `backend/src/workers/emailProcessor.ts` |
-| Worker concurrency | Configurable BullMQ worker concurrency | `WORKER_CONCURRENCY`, `backend/src/workers/index.ts` |
-| Minimum send delay | Configurable worker delay and BullMQ limiter | `MIN_EMAIL_DELAY_MS` |
-| Hourly quota | Atomic Redis Lua counter per sender/hour | `backend/src/services/rateLimitService.ts` |
-| Campaign quota | Campaign `hourlyLimit` is persisted and passed to worker reservation | `EmailCampaign.hourlyLimit` |
-| Quota overflow | Job is rescheduled to the next hourly window, never discarded | `backend/src/workers/emailProcessor.ts` |
-| Slack alert | Real Slack Web API call through notification queue | `backend/src/integrations/slack.ts` |
-| Slack deduplication | Redis `SET NX EX` atomic notification-window claim | `backend/src/integrations/slack.ts` |
-| Retry | Five attempts with exponential backoff | `backend/src/queues/emailQueue.ts` |
-| DLQ | Terminal SMTP failure copied to retained `email-dlq` | `backend/src/queues/emailQueue.ts` |
-| Search indexing | Async indexing queue and worker | `backend/src/workers/indexingWorker.ts` |
-| Search resilience | Elasticsearch first, PostgreSQL search fallback | `backend/src/services/emailService.ts` |
-| Queue monitoring | Protected Bull Board dashboard | `backend/src/app.ts` |
-| Observability | Prometheus counters, latency histograms, health endpoint | `/metrics`, `/health` |
-
-### Frontend requirements
-
-| Assignment requirement | Implemented solution |
-|---|---|
-| Google login | Real Google OAuth initiation and callback |
-| Demo login | `POST /api/auth/dev-login` remains available |
-| Authentication state | TanStack Query `/api/auth/me` and protected layout |
-| User identity | Name, email, avatar, logout |
-| Scheduled and sent views | Paginated dashboard tabs |
-| Compose flow | Subject, HTML body, sender, start time, delay, hourly limit |
-| CSV/TXT upload | PapaParse, common email columns, validation, deduplication |
-| CSV review | Active compose screen shows valid, invalid, and duplicate counts |
-| Sender switching | Uses real sender accounts from the API |
-| Search | Subject, recipient, and body search through API |
-| Email detail | Status, sender, body, timestamps, SMTP preview |
-| UX resilience | Loading states, empty states, errors, responsive layouts |
 
 ## Requirement Demonstrations
 
