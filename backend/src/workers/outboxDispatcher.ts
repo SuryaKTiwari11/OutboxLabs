@@ -36,6 +36,14 @@ export class OutboxDispatcher {
     this.isRunning = true;
     logger.info("[OutboxDispatcher] Starting continuous outbox dispatcher loop...");
 
+    // A process can terminate after claiming an event but before publishing it.
+    // There is only one dispatcher in the single-service deployment, so rows
+    // left in PUBLISHING can safely re-enter the retryable state on startup.
+    await prisma.outboxEvent.updateMany({
+      where: { status: "PUBLISHING" },
+      data: { status: "PENDING" },
+    });
+
     while (this.isRunning) {
       try {
         const processedCount = await this.dispatchBatch();
@@ -62,7 +70,7 @@ export class OutboxDispatcher {
     // 1. Fetch pending events
     const pendingEvents = await prisma.outboxEvent.findMany({
       where: {
-        status: { in: ["PENDING", "PUBLISHING"] },
+        status: "PENDING",
         retryCount: { lt: 5 },
       },
       orderBy: { createdAt: "asc" },
@@ -78,17 +86,30 @@ export class OutboxDispatcher {
     for (const event of pendingEvents) {
       if (!this.isRunning) break;
 
+      const claimed = await prisma.outboxEvent.updateMany({
+        where: { id: event.id, status: "PENDING" },
+        data: { status: "PUBLISHING" },
+      });
+      if (claimed.count !== 1) {
+        continue;
+      }
+
       try {
         const payload = JSON.parse(event.payload);
 
-        // 2. Mark as PUBLISHING
-        await prisma.outboxEvent.update({
-          where: { id: event.id },
-          data: { status: "PUBLISHING" },
-        });
+        if (
+          typeof payload.scheduledEmailId !== "string" ||
+          typeof payload.scheduledAt !== "string" ||
+          typeof payload.idempotencyKey !== "string"
+        ) {
+          throw new Error("Outbox event payload is missing required email fields");
+        }
 
-        // 3. Publish to BullMQ
+        // Publish to BullMQ. The deterministic job ID makes retries idempotent.
         const scheduledAt = new Date(payload.scheduledAt);
+        if (Number.isNaN(scheduledAt.getTime())) {
+          throw new Error("Outbox event contains an invalid scheduledAt timestamp");
+        }
         const jobId = await enqueueEmailJob(
           {
             scheduledEmailId: payload.scheduledEmailId,
@@ -103,7 +124,7 @@ export class OutboxDispatcher {
           scheduledAt
         );
 
-        // 4. Update ScheduledEmail with bullJobId
+        // Update ScheduledEmail with the deterministic BullMQ job ID.
         await prisma.scheduledEmail.update({
           where: { id: payload.scheduledEmailId },
           data: {

@@ -35,10 +35,6 @@ const INDEX_MAPPINGS = {
       createdAt:   { type: "date" },
     },
   },
-  settings: {
-    number_of_shards: 1,
-    number_of_replicas: 0,
-  },
 };
 
 export class ElasticsearchService {

@@ -96,15 +96,16 @@ export class EmailRepository {
   }
 
   /**
-   * Find all PENDING/QUEUED emails with future scheduledAt.
-   * Used by startup reconciliation — re-enqueues after Redis restart.
+   * Find QUEUED emails with a recorded BullMQ ID.
+   * PENDING emails are published by the transactional outbox dispatcher;
+   * reconciling them here would create a second publisher path.
    * NOT a cron — called exactly once on server startup.
    */
   async findPendingForReconciliation() {
     return prisma.scheduledEmail.findMany({
       where: {
-        status: { in: ["PENDING", "QUEUED"] },
-        scheduledAt: { gt: new Date() },
+        status: "QUEUED",
+        bullJobId: { not: null },
       },
       include: { sender: true },
       orderBy: { scheduledAt: "asc" },

@@ -172,6 +172,7 @@ describe("EmailService", () => {
     it("re-enqueues orphaned emails missing in Redis", async () => {
       const pendingEmail = {
         id: "email-orphan",
+        status: "QUEUED",
         bullJobId: "bull-job-missing",
         idempotencyKey: "key-orphan",
         userId: mockUserId,
