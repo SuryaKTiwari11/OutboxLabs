@@ -33,6 +33,8 @@ services:
         sync: false
 
   # ── Background Queue Worker (SMTP & Scheduler) ───────────────
+  # Render Free blocks outbound SMTP ports 25/465/587. Ethereal on 587
+  # requires a paid worker plan; otherwise use an HTTPS email provider.
   - type: worker
     name: reachinbox-worker
     env: node

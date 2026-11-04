@@ -238,8 +238,11 @@ export async function getDefaultTransporter(): Promise<Transporter> {
         pass: testAccount.pass,
       }
     ));
-    logger.info(`[SMTP] Ethereal test account created: ${testAccount.user}`);
-    logger.info(`[SMTP] Add to .env: ETHEREAL_USER=${testAccount.user} ETHEREAL_PASS=${testAccount.pass}`);
+    logger.info("[SMTP] Ethereal test account created", {
+      user: maskSmtpUser(testAccount.user),
+      host: "smtp.ethereal.email",
+      port: 587,
+    });
   }
 
   return _defaultTransporter;
