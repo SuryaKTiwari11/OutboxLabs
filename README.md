@@ -1,5 +1,7 @@
 # ReachInbox Email Job Scheduler
 
+[Video demonstration](https://drive.google.com/file/d/1hCzHXuLaRN6gWyA4F4K3dzCqUTQNi0_C/view?usp=sharing)
+
 ReachInbox is a TypeScript full-stack email scheduling platform built for the
 Outbox Labs assignment. It accepts individual or CSV-based campaigns, stores
 email state in PostgreSQL, schedules delivery with BullMQ delayed jobs, sends
